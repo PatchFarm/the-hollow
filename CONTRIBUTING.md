@@ -2,7 +2,31 @@
 
 Start with the [PatchFarm contributing guide](https://github.com/PatchFarm/.github/blob/main/CONTRIBUTING.md). Everything there applies here. This file adds the rules specific to The Hollow.
 
-Development setup instructions will be added once the first code lands (milestone M0 in [docs/SCOPE.md](docs/SCOPE.md)).
+## Development setup
+
+You need Node 22 or newer.
+
+```bash
+npm ci              # install from the lockfile
+npm test            # Vitest
+npm run typecheck   # tsc, strict mode
+npm run lint        # Biome (lint and format check); npm run format fixes what it can
+npm run build       # compile to dist/
+node dist/cli.js plan --cwd test/fixtures/python-fastapi
+```
+
+CI runs all of these on Node 22 and 24 for every pull request.
+
+**Layout**
+- `src/cli/`: argument parsing and output
+- `src/detect/`: project detection, one file per language plus shared signals
+- `src/config/`: the `hollow.yml` schema (zod) and loader
+- `src/util/project-files.ts`: the only way to read project files. It refuses paths and symlinks that leave the project root, so use it instead of `fs`
+- `test/fixtures/`: sample projects (see its README)
+
+**Changing the hollow.yml schema:** edit `src/config/schema.ts`, then run `npm run schema` to regenerate `schema/hollow.schema.json`. A test fails if the two drift apart.
+
+**Dependencies:** runtime dependencies are kept to a minimum (currently `zod`, `yaml` and `smol-toml`, none of which pull in further packages). A PR that adds one should say why the standard library is not enough.
 
 ## Rules for this repo
 

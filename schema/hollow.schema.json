@@ -1,0 +1,370 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "number",
+      "const": 1,
+      "description": "Schema version. Always 1 for now."
+    },
+    "project": {
+      "default": {},
+      "type": "object",
+      "properties": {
+        "language": {
+          "type": "string",
+          "enum": [
+            "node",
+            "python"
+          ]
+        },
+        "packageManager": {
+          "type": "string",
+          "enum": [
+            "npm",
+            "pnpm",
+            "yarn",
+            "bun",
+            "pip",
+            "uv",
+            "poetry"
+          ]
+        },
+        "runtimeVersion": {
+          "description": "Node or Python version, for example `22` or `3.13`.",
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false,
+      "description": "Overrides for what The Hollow detects. Leave empty to use detection."
+    },
+    "environments": {
+      "default": {
+        "staging": {},
+        "preprod": {
+          "enabled": false
+        },
+        "production": {
+          "approvers": []
+        }
+      },
+      "type": "object",
+      "properties": {
+        "staging": {
+          "default": {},
+          "type": "object",
+          "properties": {
+            "url": {
+              "type": "string",
+              "format": "uri",
+              "description": "Public https URL used for health checks and smoke tests."
+            }
+          },
+          "additionalProperties": false
+        },
+        "preprod": {
+          "default": {
+            "enabled": false
+          },
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "default": false,
+              "description": "Preprod is opt-in.",
+              "type": "boolean"
+            },
+            "url": {
+              "type": "string",
+              "format": "uri",
+              "description": "Public https URL used for health checks and smoke tests."
+            }
+          },
+          "additionalProperties": false
+        },
+        "production": {
+          "default": {
+            "approvers": []
+          },
+          "type": "object",
+          "properties": {
+            "url": {
+              "type": "string",
+              "format": "uri",
+              "description": "Public https URL used for health checks and smoke tests."
+            },
+            "approvers": {
+              "default": [],
+              "description": "Who can approve production deploys. Empty means repo admins.",
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^@?[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})(?:\\/[A-Za-z0-9._-]+)?$",
+                "description": "GitHub user (`octocat`) or team (`org/team`)."
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false,
+      "description": "Staging and production always exist. Production is always behind an approval gate, which cannot be turned off."
+    },
+    "deploy": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "target": {
+              "type": "string",
+              "const": "vercel"
+            },
+            "tokenSecret": {
+              "default": "VERCEL_TOKEN",
+              "type": "string",
+              "pattern": "^[A-Z][A-Z0-9_]*$",
+              "description": "Name of a GitHub Actions secret. Never put secret values in hollow.yml."
+            }
+          },
+          "required": [
+            "target"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "target": {
+              "type": "string",
+              "const": "cloudflare-workers"
+            },
+            "tokenSecret": {
+              "default": "CLOUDFLARE_API_TOKEN",
+              "type": "string",
+              "pattern": "^[A-Z][A-Z0-9_]*$",
+              "description": "Name of a GitHub Actions secret. Never put secret values in hollow.yml."
+            }
+          },
+          "required": [
+            "target"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "target": {
+              "type": "string",
+              "const": "cloudflare-pages"
+            },
+            "tokenSecret": {
+              "default": "CLOUDFLARE_API_TOKEN",
+              "type": "string",
+              "pattern": "^[A-Z][A-Z0-9_]*$",
+              "description": "Name of a GitHub Actions secret. Never put secret values in hollow.yml."
+            },
+            "projectName": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9-]*$"
+            }
+          },
+          "required": [
+            "target",
+            "projectName"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "target": {
+              "type": "string",
+              "const": "docker"
+            },
+            "registry": {
+              "default": "ghcr.io",
+              "type": "string",
+              "const": "ghcr.io"
+            },
+            "image": {
+              "description": "Image name in the registry. Defaults to the GitHub repo name.",
+              "type": "string",
+              "pattern": "^[a-z0-9]+(?:[._/-][a-z0-9]+)*$"
+            }
+          },
+          "required": [
+            "target"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "target": {
+              "type": "string",
+              "const": "vps"
+            },
+            "host": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9.-]+$",
+              "description": "Server hostname or IP. Its SSH host key is pinned in known_hosts."
+            },
+            "user": {
+              "default": "deploy",
+              "type": "string",
+              "pattern": "^[a-z_][a-z0-9_-]*$"
+            },
+            "port": {
+              "default": 22,
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            },
+            "path": {
+              "default": "/srv/app",
+              "type": "string",
+              "pattern": "^\\/[A-Za-z0-9._/-]*$"
+            },
+            "sshKeySecret": {
+              "default": "VPS_SSH_KEY",
+              "type": "string",
+              "pattern": "^[A-Z][A-Z0-9_]*$",
+              "description": "Name of a GitHub Actions secret. Never put secret values in hollow.yml."
+            },
+            "image": {
+              "description": "Image name in the registry. Defaults to the GitHub repo name.",
+              "type": "string",
+              "pattern": "^[a-z0-9]+(?:[._/-][a-z0-9]+)*$"
+            }
+          },
+          "required": [
+            "target",
+            "host"
+          ],
+          "additionalProperties": false
+        }
+      ],
+      "description": "Where the app is deployed."
+    },
+    "security": {
+      "default": {
+        "failOn": "high",
+        "sast": "auto"
+      },
+      "type": "object",
+      "properties": {
+        "failOn": {
+          "default": "high",
+          "description": "Lowest severity that fails the pipeline. Lower findings are reported only.",
+          "type": "string",
+          "enum": [
+            "critical",
+            "high",
+            "medium",
+            "low"
+          ]
+        },
+        "sast": {
+          "default": "auto",
+          "description": "`auto` uses CodeQL on public repos and Semgrep on private ones.",
+          "type": "string",
+          "enum": [
+            "auto",
+            "codeql",
+            "semgrep"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "database": {
+      "default": {
+        "migrations": "auto",
+        "destructiveChangeLabel": "allow-destructive-migration"
+      },
+      "type": "object",
+      "properties": {
+        "migrations": {
+          "default": "auto",
+          "type": "string",
+          "enum": [
+            "auto",
+            "none",
+            "prisma",
+            "drizzle",
+            "alembic",
+            "django"
+          ]
+        },
+        "destructiveChangeLabel": {
+          "default": "allow-destructive-migration",
+          "description": "PR label required to merge a migration that drops or renames data.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 50
+        }
+      },
+      "additionalProperties": false
+    },
+    "notifications": {
+      "default": {
+        "incidentIssues": true
+      },
+      "type": "object",
+      "properties": {
+        "slackWebhookSecret": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]*$",
+          "description": "Name of a GitHub Actions secret. Never put secret values in hollow.yml."
+        },
+        "discordWebhookSecret": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]*$",
+          "description": "Name of a GitHub Actions secret. Never put secret values in hollow.yml."
+        },
+        "incidentIssues": {
+          "default": true,
+          "description": "Open an issue when a production deploy fails.",
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false
+    },
+    "agent": {
+      "default": {
+        "ai": true,
+        "maxRepairAttempts": 3,
+        "maxSpendUsd": 2
+      },
+      "type": "object",
+      "properties": {
+        "ai": {
+          "default": true,
+          "description": "Set to false for the same result as --no-ai.",
+          "type": "boolean"
+        },
+        "maxRepairAttempts": {
+          "default": 3,
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10
+        },
+        "maxSpendUsd": {
+          "default": 2,
+          "description": "Hard cap on model spend per run, in US dollars.",
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "version",
+    "deploy"
+  ],
+  "additionalProperties": false,
+  "title": "hollow.yml",
+  "description": "Configuration for The Hollow. https://github.com/PatchFarm/the-hollow"
+}
