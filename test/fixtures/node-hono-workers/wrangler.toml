@@ -1,0 +1,6 @@
+name = "fixture-hono-workers"
+main = "src/index.ts"
+compatibility_date = "2026-11-01"
+
+[env.staging]
+name = "fixture-hono-workers-staging"

@@ -1,0 +1,14 @@
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider = "prisma-client"
+  output   = "../app/generated/prisma"
+}
+
+model Note {
+  id        Int      @id @default(autoincrement())
+  body      String
+  createdAt DateTime @default(now())
+}

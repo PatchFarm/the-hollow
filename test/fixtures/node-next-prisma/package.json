@@ -1,0 +1,26 @@
+{
+  "name": "fixture-next-prisma",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "@prisma/client": "7.10.1",
+    "next": "16.4.6",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.0",
+    "eslint": "10.14.0",
+    "prisma": "7.10.1",
+    "typescript": "6.0.3",
+    "vitest": "5.0.5"
+  }
+}
