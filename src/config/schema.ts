@@ -57,17 +57,21 @@ const preprodSchema = z.strictObject({
 
 const productionSchema = z.strictObject({
   url: httpsUrl.optional(),
-  approvers: z
-    .array(githubLogin)
-    .default([])
-    .meta({ description: "Who can approve production deploys. Empty means repo admins." }),
+  approvers: z.array(githubLogin).max(6, "GitHub allows at most 6 approvers").default([]).meta({
+    description:
+      "Who can approve production deploys (up to 6 users or org/team). Empty means whoever runs `hollow protect`.",
+  }),
+  preventSelfReview: z.boolean().default(false).meta({
+    description:
+      "Stop people from approving deploys they started. Leave off when one person both deploys and approves.",
+  }),
 });
 
 export const environmentsSchema = z
   .strictObject({
     staging: stagingSchema.default({}),
     preprod: preprodSchema.default({ enabled: false }),
-    production: productionSchema.default({ approvers: [] }),
+    production: productionSchema.default({ approvers: [], preventSelfReview: false }),
   })
   .meta({
     description:
@@ -150,6 +154,15 @@ export const releaseSchema = z
   })
   .meta({ description: "How releases are versioned and what each release carries." });
 
+export const protectionSchema = z
+  .strictObject({
+    requiredApprovals: z.int().min(0).max(6).default(0).meta({
+      description:
+        "Approvals a pull request needs before it can merge. 0 suits a solo project, since GitHub does not let you approve your own pull request.",
+    }),
+  })
+  .meta({ description: "Branch rules that `hollow protect` applies to the default branch." });
+
 export const securitySchema = z.strictObject({
   failOn: z.enum(["critical", "high", "medium", "low"]).default("high").meta({
     description: "Lowest severity that fails the pipeline. Lower findings are reported only.",
@@ -200,10 +213,11 @@ export const hollowConfigSchema = z
     environments: environmentsSchema.default({
       staging: {},
       preprod: { enabled: false },
-      production: { approvers: [] },
+      production: { approvers: [], preventSelfReview: false },
     }),
     deploy: deploySchema,
     release: releaseSchema.default({ tokenSecret: "RELEASE_PLEASE_TOKEN" }),
+    protection: protectionSchema.default({ requiredApprovals: 0 }),
     security: securitySchema.default({ failOn: "high", sast: "auto" }),
     database: databaseSchema.default({
       migrations: "auto",

@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach } from "vitest";
 import { run } from "../src/cli/main.js";
+import type { Connect } from "../src/cli/protect-command.js";
 
 export const fixture = (name: string) => path.join(import.meta.dirname, "fixtures", name);
 
@@ -43,7 +44,7 @@ export interface CliResult {
 /** Run the CLI in-process. Pass `answers` to simulate a person typing at the prompts. */
 export async function runCli(
   args: string[],
-  options: { cwd?: string; answers?: string[] } = {},
+  options: { cwd?: string; answers?: string[]; connect?: Connect } = {},
 ): Promise<CliResult> {
   let stdout = "";
   let stderr = "";
@@ -56,6 +57,7 @@ export async function runCli(
       stderr += text;
     },
     cwd: options.cwd ?? process.cwd(),
+    ...(options.connect === undefined ? {} : { connect: options.connect }),
     ...(answers === undefined
       ? {}
       : {

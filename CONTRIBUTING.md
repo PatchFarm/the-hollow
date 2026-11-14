@@ -24,6 +24,8 @@ CI runs all of these on Node 22 and 24 for every pull request.
 - `src/pipeline/plan.ts`: the typed pipeline model (what CI runs for a project), built from detection plus `hollow.yml`
 - `src/generate/`: renders the model into files. `index.ts` lists them with their kind: `generated` (The Hollow owns and regenerates it), `generated-optional` (same, but a file the project already has is left alone) or `scaffold` (created once, then the developer's). `pins.ts` holds every pinned action, hook, binary and image
 - `src/cli/check-command.ts`: `hollow check`, which runs the model's checks locally through `src/util/exec.ts`
+- `src/cli/protect-command.ts` and `src/protect/plan.ts`: `hollow protect`. Planning only reads; every change sits in a step's `apply` until the developer confirms
+- `src/github/api.ts`: the only way to talk to GitHub, through `gh api` and the developer's own login. Tests use the in-memory fake in `test/fake-github.ts` and never call GitHub
 - `src/util/project-files.ts` and `src/util/project-writer.ts`: the only way to read and write project files. They refuse paths and symlinks that leave the project root, so use them instead of `fs`
 - `test/fixtures/`: sample projects (see its README)
 - `test/golden/`: the reviewed output for each sample app. CI lints every golden workflow with actionlint

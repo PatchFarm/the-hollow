@@ -2,11 +2,13 @@ import { readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { loadConfig } from "../config/load.js";
 import { detectProject } from "../detect/index.js";
+import { isRepoName } from "../github/api.js";
 import { planPipeline } from "../pipeline/plan.js";
 import { CHECK_IDS, type CheckStepId, check } from "./check-command.js";
 import { formatPlan } from "./format.js";
 import { init, upgrade } from "./generate-command.js";
 import type { Ask } from "./interview.js";
+import { type Connect, ghConnect, protect } from "./protect-command.js";
 
 export interface Io {
   stdout: (text: string) => void;
@@ -14,6 +16,8 @@ export interface Io {
   cwd: string;
   /** Prompt the person at the keyboard. Absent when input is not a terminal. */
   ask?: Ask;
+  /** How `hollow protect` reaches GitHub. Defaults to the gh CLI; tests pass a fake. */
+  connect?: Connect;
 }
 
 /** Commands from docs/SCOPE.md that are planned but not built yet, with the milestone that ships them. */
@@ -36,6 +40,7 @@ Commands:
   init        Create hollow.yml and generate the CI workflow and Dependabot config
   upgrade     Regenerate the files The Hollow owns from hollow.yml
   check       Run the CI checks on this machine, using the dependencies already installed
+  protect     Apply branch rules, environments and security settings on GitHub (asks first)
 ${Object.entries(PLANNED)
   .map(
     ([name, { milestone, summary }]) => `  ${name.padEnd(10)}  ${summary} (coming in ${milestone})`,
@@ -45,10 +50,12 @@ ${Object.entries(PLANNED)
 Options:
   --cwd <dir>        Project directory (default: current directory)
   --json             Machine-readable output (plan)
-  --dry-run          Show what would change without writing anything (init, upgrade)
+  --dry-run          Show what would change without changing anything (init, upgrade, protect)
   --force            Replace existing files The Hollow did not write (init, upgrade)
   --target <name>    Deploy target: vercel, cloudflare-workers, cloudflare-pages, docker, vps (init)
-  --yes              Accept every suggested answer without asking (init)
+  --yes              Accept every suggested answer without asking (init), or apply without
+                     confirming (protect)
+  --repo <owner/name>  GitHub repo to change, if not the one this folder's git remote points at (protect)
   --install          Run the locked install CI uses before checking (check)
   --only <ids>       Run only some checks, comma-separated: ${CHECK_IDS.join(", ")} (check)
   --no-ai            Never call a model. This release makes no AI calls, so it is the default.
@@ -63,6 +70,7 @@ const COMMAND_OPTIONS: Record<string, readonly string[]> = {
   init: ["dry-run", "force", "target", "yes"],
   upgrade: ["dry-run", "force"],
   check: ["install", "only"],
+  protect: ["dry-run", "yes", "repo"],
 };
 const GLOBAL_OPTIONS = ["cwd", "help", "version", "no-ai"];
 
@@ -133,6 +141,20 @@ export async function run(argv: readonly string[], io: Io): Promise<number> {
         ...output,
       });
     }
+    case "protect":
+      if (values.repo !== undefined && !isRepoName(values.repo)) {
+        io.stderr("--repo takes a GitHub repo as owner/name.\n");
+        return EXIT.usage;
+      }
+      return protect({
+        dir,
+        repo: values.repo,
+        dryRun: values["dry-run"] ?? false,
+        yes: values.yes ?? false,
+        ask: io.ask,
+        connect: io.connect ?? ghConnect,
+        ...output,
+      });
     case "upgrade":
       return upgrade({
         dir,
@@ -167,6 +189,7 @@ function parse(argv: readonly string[]) {
       yes: { type: "boolean", short: "y" },
       install: { type: "boolean" },
       only: { type: "string" },
+      repo: { type: "string" },
       "no-ai": { type: "boolean" },
       help: { type: "boolean", short: "h" },
       version: { type: "boolean", short: "v" },
