@@ -1,6 +1,6 @@
 # The Hollow
 
-**Status: early development. The Hollow generates the CI half of the pipeline (build, quality, tests and security scanning) for Node/TypeScript and Python. Releases and deploys come next. There is no npm release yet.**
+**Status: early development. For Node/TypeScript and Python, The Hollow generates CI (build, quality, tests and security scanning) and release workflows, and protects the repo on GitHub. Deploys come next. There is no npm release yet.**
 
 The Hollow is an AI agent that sets up a complete, secure CI/CD pipeline for your project on GitHub Actions. It works out what your project needs, writes the pipeline, runs it, fixes it until it passes, and hands you the result as a pull request.
 
@@ -51,6 +51,16 @@ It never touches git and never overwrites a file it did not write (unless you pa
 `hollow check` runs the same checks on your machine before you push: your lint, format, type check, test and build steps, plus Gitleaks and OSV-Scanner if they are installed (with the same fail threshold as CI). It uses the dependencies you already have; add `--install` to run CI's locked install first, or `--only lint,test` to run some of them. It runs your project's own scripts, the same way `npm run` does.
 
 After you change `hollow.yml`, run `hollow upgrade` to regenerate the files The Hollow owns. It leaves your starting-point files alone; run `hollow init` again to add any that are missing. Both commands take `--dry-run`. If [actionlint](https://github.com/rhysd/actionlint) is installed, they check the workflow with it before writing anything.
+
+Once the workflows are merged, `hollow protect` sets up the repo on GitHub through your own [gh](https://cli.github.com) login. It reads the current settings, shows exactly what it would change, and changes nothing until you say yes (`--dry-run` only shows; `--yes` skips the question, for scripts):
+
+- a `The Hollow` ruleset on your default branch: changes only through pull requests, squash merges only, no force pushes or deletion, no bypass, and the `CI passed` and `Conventional Commit title` checks required, accepted only from GitHub Actions. It needs 0 approvals by default, since GitHub doesn't let you approve your own pull request; set `protection.requiredApprovals` in `hollow.yml` once you have a reviewer
+- squash commits that take the pull request title, so the Conventional Commit title becomes the commit message, and branches deleted after merge
+- `staging` and `production` environments (and `preprod` if enabled) that deploy only from the default branch. Production deploys wait for approval from `environments.production.approvers`, or from you if none are listed
+- read-only workflow tokens by default, and permission for GitHub Actions to open pull requests so release-please can open its release PR. That permission also lets workflows approve pull requests, so it is only turned on when no approval is required
+- secret scanning with push protection, Dependabot alerts and security fixes, and private vulnerability reporting
+
+It needs admin access to the repo. It only adds or tightens settings, and leaves other rulesets and branch policies alone (it points them out). Some of this depends on your GitHub plan: private repos get deploy approvals only on GitHub Enterprise, and private repos on GitHub Free get no branch rules or environments at all. `hollow protect` applies what your plan allows and says what it could not. Run it again any time: when nothing has drifted, it changes nothing.
 
 ## hollow.yml
 

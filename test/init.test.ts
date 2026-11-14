@@ -22,9 +22,7 @@ describe("hollow init", () => {
     expect(result.stderr).toBe("");
     expect(result.code).toBe(EXIT.ok);
     expect(result.stdout).toContain("create         hollow.yml");
-    expect(result.stdout).toContain(
-      'require the "CI passed" and "Conventional Commit title" checks',
-    );
+    expect(result.stdout).toContain("run `npx the-hollow protect` to protect main");
     expect(result.stdout).toContain("pre-commit install");
     for (const file of [
       ".github/workflows/pr-title.yml",

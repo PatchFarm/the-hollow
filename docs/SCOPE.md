@@ -168,7 +168,7 @@ hollow init
   9. Propose    open a PR with the changes and a summary of what it found
 ```
 
-**Commands (v1):** `init`, `plan`, `check` (run CI checks locally), `doctor` (audit an existing pipeline against these principles), `fix` (repair the latest failed run), `secrets`, `upgrade` (regenerate from `hollow.yml`).
+**Commands (v1):** `init`, `plan`, `check` (run CI checks locally), `protect` (apply branch rules, environments and security settings through `gh`, after confirmation), `doctor` (audit an existing pipeline against these principles), `fix` (repair the latest failed run), `secrets`, `upgrade` (regenerate from `hollow.yml`).
 
 **Agent guardrails:**
 - Edits only pipeline and deploy files (`.github/`, `hollow.yml`, target config). Changes to application code are suggested in the PR, never applied.
@@ -188,7 +188,7 @@ hollow init
 
 ## 10. Known platform limits to document
 
-- **GitHub plans:** required reviewers and wait timers on environments are free for public repos. Private repos need a paid GitHub plan, so on free private repos hollow uses a manual-dispatch approval workflow instead.
+- **GitHub plans:** required reviewers and wait timers on environments are free for public repos. On private repos they need GitHub Enterprise (Pro and Team do not include them), so there hollow gates production with a manual-dispatch approval workflow instead. Private repos on GitHub Free also get no branch rules (rulesets or branch protection) and no environments; `hollow protect` applies what the plan allows and reports the rest. (Corrected 2026-11-14 from GitHub's docs; the first draft said any paid plan was enough.)
 - **CodeQL on private repos** needs GitHub Advanced Security (Semgrep fallback above).
 - **Scheduled workflows** run at most every 5 minutes and can be delayed, so synthetic checks are a baseline, not real uptime monitoring.
 

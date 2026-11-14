@@ -20,10 +20,11 @@ describe("hollow.yml", () => {
       environments: {
         staging: {},
         preprod: { enabled: false },
-        production: { approvers: [] },
+        production: { approvers: [], preventSelfReview: false },
       },
       deploy: { target: "vercel", tokenSecret: "VERCEL_TOKEN" },
       release: { tokenSecret: "RELEASE_PLEASE_TOKEN" },
+      protection: { requiredApprovals: 0 },
       security: { failOn: "high", sast: "auto" },
       database: { migrations: "auto", destructiveChangeLabel: "allow-destructive-migration" },
       notifications: { incidentIssues: true },
@@ -114,6 +115,16 @@ agent:
       "version: 1\ndeploy: { target: vercel }\nagent:\n  maxRepairAttempts: 50\n  maxSpendUsd: 1000\n",
     );
     expect(errors).toHaveLength(2);
+  });
+
+  it("caps required approvals and production approvers at GitHub's limit of 6", () => {
+    const errors = errorsOf(
+      `version: 1\ndeploy: { target: vercel }\nprotection:\n  requiredApprovals: 7\nenvironments:\n  production:\n    approvers: [a, b, c, d, e, f, g]\n`,
+    );
+    expect(errors).toEqual([
+      expect.stringContaining("environments.production.approvers"),
+      expect.stringContaining("protection.requiredApprovals"),
+    ]);
   });
 
   it("reports YAML syntax errors and duplicate keys", () => {

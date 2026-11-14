@@ -217,7 +217,7 @@ function printNextSteps(plan: PipelinePlan, options: GenerateOptions): void {
   const steps = [
     "Review the new files (git status, git diff).",
     'Commit them on a branch and open a pull request with a Conventional Commit title, such as "ci: add The Hollow pipeline". The pipeline runs on that pull request.',
-    `Once it passes, require the "CI passed" and "Conventional Commit title" checks in branch protection for ${plan.defaultBranch}.`,
+    `Once it is merged, run \`npx the-hollow protect\` to protect ${plan.defaultBranch}: it shows the branch rules, environments and security settings it would apply on GitHub, and asks before changing anything.`,
   ];
   if (plan.existingHooks === null) {
     steps.push(
@@ -226,7 +226,6 @@ function printNextSteps(plan: PipelinePlan, options: GenerateOptions): void {
   }
   if (plan.release !== null) {
     steps.push(
-      "Let GitHub Actions create pull requests (Settings > Actions > General), so release-please can open its release PR.",
       `Optional: add a fine-grained token with Contents and Pull requests write access as the ${plan.release.tokenSecret} secret, so CI also runs on release PRs.`,
     );
   }
