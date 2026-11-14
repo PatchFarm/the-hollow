@@ -74,6 +74,16 @@ export function formatPlan(detection: Detection, config: LoadResult, pipeline: P
     ];
     row("Security", `${scanners.join(", ")}; fails on ${plan.security.failOn} or worse`);
     if (plan.services.length > 0) row("Services", plan.services.map((s) => s.engine).join(", "));
+    if (plan.release !== null) {
+      const { artifact, releaseType } = plan.release;
+      const what =
+        artifact.kind === "image"
+          ? `container image on GHCR (${artifact.dockerfile})`
+          : artifact.outputDir === null
+            ? "source archive at the tag"
+            : `build output archive: ${artifact.outputDir} (${artifact.outputSource})`;
+      row("Release", `release-please (${releaseType}); ${what}, with SBOM and provenance`);
+    }
   } else if (detection.language !== null) {
     lines.push("", "CI pipeline", `  Cannot plan: ${pipeline.error}`);
   }

@@ -37,6 +37,10 @@ node dist/cli.js plan --cwd /path/to/your/project
   - your project's own lint, format, type check, test and build steps, with a database service container when the app uses one
   - Gitleaks (secrets), OSV-Scanner (dependencies), CodeQL on public repos or Semgrep on private ones, and Trivy when there is a Dockerfile
   - one `CI passed` check to require in branch protection
+- `.github/workflows/release.yml`, which versions releases from your Conventional Commits with [release-please](https://github.com/googleapis/release-please). It keeps a release pull request open with the changelog; merging it tags the version, creates the GitHub release, and builds one artifact:
+  - a container image on GHCR, by digest, for the Docker and VPS targets
+  - a tarball of your build output (or of the source, when the output folder is unknown) for Vercel and Cloudflare
+  - an SBOM (Syft) and a signed build provenance attestation, attached to the image and the release
 - `.github/workflows/pr-title.yml`, which requires Conventional Commit pull request titles (`feat: ...`, `fix(api): ...`), since squash merges turn them into the commit history releases are built from
 - `.github/dependabot.yml`, with weekly grouped updates held back 7 days after each release and titled as Conventional Commits
 - `.pre-commit-config.yaml`, which runs Gitleaks and your lint and format checks before each commit (skipped if you already use Husky or Lefthook)

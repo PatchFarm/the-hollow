@@ -34,10 +34,38 @@ export interface PipelinePlan {
     sast: HollowConfig["security"]["sast"];
     codeqlLanguages: string[];
   };
+  /** How releases are cut and what they carry. Null until hollow.yml names a deploy target. */
+  release: ReleasePlan | null;
   /** Another git hook manager the project already uses (Husky, Lefthook), or null. */
   existingHooks: string | null;
   /** Things the developer should know before merging the generated pipeline. */
   notes: string[];
+}
+
+export interface ReleasePlan {
+  /** release-please strategy: which files carry the version. */
+  releaseType: "node" | "python" | "simple";
+  tokenSecret: string;
+  artifact: ImageArtifact | ArchiveArtifact;
+}
+
+/** A container image on GHCR, promoted by digest. */
+export interface ImageArtifact {
+  kind: "image";
+  dockerfile: string;
+  /** Image name under ghcr.io, or null for the repository name. */
+  image: string | null;
+}
+
+/** A tarball attached to the GitHub release. */
+export interface ArchiveArtifact {
+  kind: "archive";
+  /** Build output folder, or null to archive the source at the tag. */
+  outputDir: string | null;
+  /** Where outputDir came from, for `hollow plan`. */
+  outputSource: string | null;
+  /** Build command to run before archiving, or null. */
+  build: string | null;
 }
 
 export type CheckId = "lint" | "format" | "typecheck" | "test" | "build";
@@ -120,6 +148,7 @@ export function planPipeline(detection: Detection, config: HollowConfig | null):
     services: services(detection),
     dockerfile: detection.container.dockerfile,
     existingHooks,
+    release: null,
     security: {
       failOn: config?.security.failOn ?? "high",
       sast: config?.security.sast ?? "auto",
@@ -128,28 +157,20 @@ export function planPipeline(detection: Detection, config: HollowConfig | null):
     notes,
   };
 
+  let part: LanguagePart;
   if (language === "node") {
     if (!isNodePm(packageManager)) {
       return { status: "error", error: `${packageManager} is not a Node package manager.` };
     }
-    return {
-      status: "ok",
-      plan: {
-        ...base,
-        ...planNode(detection, files, packageManager, overrides.runtimeVersion, notes),
-      },
-    };
+    part = planNode(detection, files, packageManager, overrides.runtimeVersion, notes);
+  } else {
+    if (isNodePm(packageManager)) {
+      return { status: "error", error: `${packageManager} is not a Python package manager.` };
+    }
+    part = planPython(detection, files, packageManager, overrides.runtimeVersion, notes);
   }
-  if (isNodePm(packageManager)) {
-    return { status: "error", error: `${packageManager} is not a Python package manager.` };
-  }
-  return {
-    status: "ok",
-    plan: {
-      ...base,
-      ...planPython(detection, files, packageManager, overrides.runtimeVersion, notes),
-    },
-  };
+  const release = config === null ? null : planRelease(detection, files, config, part, notes);
+  return { status: "ok", plan: { ...base, ...part, release } };
 }
 
 function isNodePm(pm: PackageManager): pm is NodePackageManager {
@@ -426,6 +447,92 @@ function planPython(
     });
   }
   return { toolchain, install, checks };
+}
+
+/** Frameworks whose build output folder is fixed. */
+const OUTPUT_DIRS: Record<string, string> = {
+  vite: "dist",
+  astro: "dist",
+  next: ".next",
+  nuxt: ".output",
+};
+
+function planRelease(
+  detection: Detection,
+  files: ProjectFiles,
+  config: HollowConfig,
+  part: LanguagePart,
+  notes: string[],
+): ReleasePlan {
+  const { deploy } = config;
+  let releaseType: ReleasePlan["releaseType"] = "simple";
+  if (detection.language === "node") releaseType = "node";
+  else {
+    const pyproject = readPyproject(files);
+    const project = isRecord(pyproject?.project) ? pyproject.project : {};
+    const tool = isRecord(pyproject?.tool) ? pyproject.tool : {};
+    const poetry = isRecord(tool.poetry) ? tool.poetry : {};
+    if (typeof project.version === "string" || typeof poetry.version === "string") {
+      releaseType = "python";
+    }
+  }
+
+  let artifact: ReleasePlan["artifact"];
+  const dockerfile = detection.container.dockerfile;
+  if ((deploy.target === "docker" || deploy.target === "vps") && dockerfile !== null) {
+    artifact = { kind: "image", dockerfile, image: deploy.image ?? null };
+  } else {
+    if (deploy.target === "docker" || deploy.target === "vps") {
+      notes.push(
+        `The ${deploy.target} target ships a container image, but there is no Dockerfile yet, so releases attach a source archive for now. Add a Dockerfile and run \`hollow upgrade\`.`,
+      );
+    }
+    let outputDir: string | null = config.release.outputDir ?? null;
+    let outputSource: string | null = outputDir === null ? null : "hollow.yml#release.outputDir";
+    if (outputDir === null) {
+      const pages = pagesOutputDir(files);
+      if (pages !== null) {
+        outputDir = pages;
+        outputSource = "wrangler.toml#pages_build_output_dir";
+      } else {
+        const framework = detection.frameworks.find((f) => OUTPUT_DIRS[f.value] !== undefined);
+        if (framework !== undefined) {
+          outputDir = OUTPUT_DIRS[framework.value] ?? null;
+          outputSource = `${framework.value} default`;
+        }
+      }
+    }
+    const build = part.checks.find((check) => check.id === "build")?.run ?? null;
+    if (outputDir !== null && build === null) {
+      notes.push(
+        `There is no build command, so releases cannot produce ${outputDir}. They attach a source archive instead.`,
+      );
+      outputDir = null;
+      outputSource = null;
+    }
+    artifact = {
+      kind: "archive",
+      outputDir,
+      outputSource,
+      build: outputDir === null ? null : build,
+    };
+  }
+  return { releaseType, tokenSecret: config.release.tokenSecret, artifact };
+}
+
+function pagesOutputDir(files: ProjectFiles): string | null {
+  const text = files.readText("wrangler.toml");
+  if (text === null) return null;
+  try {
+    const value = (parseToml(text) as Record<string, unknown>).pages_build_output_dir;
+    return typeof value === "string" &&
+      /^[A-Za-z0-9._][A-Za-z0-9._/-]*$/.test(value) &&
+      !value.split("/").includes("..")
+      ? value.replace(/^\.\//, "")
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 function placeholderTests(notes: string[]): Check {

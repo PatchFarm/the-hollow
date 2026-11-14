@@ -132,6 +132,24 @@ export const deploySchema = z
   ])
   .meta({ description: "Where the app is deployed." });
 
+const relativeDir = z
+  .string()
+  .regex(/^[A-Za-z0-9._][A-Za-z0-9._/-]*$/, "must be a relative path inside the project")
+  .refine((value) => !value.split("/").includes(".."), "must not contain `..`");
+
+export const releaseSchema = z
+  .strictObject({
+    tokenSecret: secretName.default("RELEASE_PLEASE_TOKEN").meta({
+      description:
+        "Secret with a token release-please uses, so its release pull requests run CI. Falls back to the workflow's own token when the secret is not set.",
+    }),
+    outputDir: relativeDir.optional().meta({
+      description:
+        "Build output folder to attach to each release for targets without a container image. Detected for Vite, Astro, Next.js, Nuxt and Cloudflare Pages.",
+    }),
+  })
+  .meta({ description: "How releases are versioned and what each release carries." });
+
 export const securitySchema = z.strictObject({
   failOn: z.enum(["critical", "high", "medium", "low"]).default("high").meta({
     description: "Lowest severity that fails the pipeline. Lower findings are reported only.",
@@ -185,6 +203,7 @@ export const hollowConfigSchema = z
       production: { approvers: [] },
     }),
     deploy: deploySchema,
+    release: releaseSchema.default({ tokenSecret: "RELEASE_PLEASE_TOKEN" }),
     security: securitySchema.default({ failOn: "high", sast: "auto" }),
     database: databaseSchema.default({
       migrations: "auto",
