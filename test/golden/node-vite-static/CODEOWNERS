@@ -1,0 +1,10 @@
+# Who must review changes to which paths. https://docs.github.com/articles/about-code-owners
+# Created by The Hollow as a starting point: uncomment and edit, then require code owner review
+# in branch protection if you want it enforced.
+#
+# Everything:
+# *                     @your-username
+#
+# The pipeline and its config deserve a careful reviewer:
+# /.github/             @your-username
+# /hollow.yml           @your-username

@@ -1,7 +1,7 @@
 import type { PipelinePlan, Service } from "../pipeline/plan.js";
 import { CVSS_FLOOR, SEVERITY_ORDER } from "../pipeline/severity.js";
 import { ACTIONS, BINARIES, type BinaryPin, IMAGES, TOOL_VERSIONS } from "./pins.js";
-import { renderGenerated } from "./render.js";
+import { expr, renderGenerated } from "./render.js";
 
 export const CI_WORKFLOW = ".github/workflows/ci.yml";
 
@@ -340,11 +340,6 @@ function summaryJob(needs: string[]): Job {
       },
     ],
   };
-}
-
-/** A GitHub Actions expression, `${{ ... }}`. */
-function expr(expression: string): string {
-  return `\${{ ${expression} }}`;
 }
 
 /** Join shell lines into one `run:` block. A single line stays inline. */

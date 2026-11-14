@@ -24,8 +24,7 @@ export interface InitOptions extends GenerateOptions {
   ask?: Ask | undefined;
 }
 
-type FileToWrite = GeneratedFile & { owned: boolean };
-type Change = "create" | "update" | "unchanged";
+type Change = "create" | "update" | "unchanged" | "kept";
 
 /**
  * `hollow init`: detect, interview, write hollow.yml, and generate the CI files from it.
@@ -43,7 +42,7 @@ export async function init(options: InitOptions): Promise<number> {
 
   const existing = loadConfig(detection.root);
   let config: HollowConfig;
-  const extra: FileToWrite[] = [];
+  const extra: GeneratedFile[] = [];
   if (existing.status === "invalid") {
     reportInvalid(existing.errors, options);
     return 1;
@@ -75,20 +74,25 @@ export async function init(options: InitOptions): Promise<number> {
     extra.push({
       path: CONFIG_FILE,
       content: renderHollowYml(answers.config),
+      // Written only because it is missing; the developer owns it from here on.
+      kind: "scaffold",
       workflow: false,
-      owned: false,
     });
   }
 
   const plan = makePlan(detection, config, options);
   if (plan === null) return 1;
-  const files = [...extra, ...generateFiles(plan).map((file) => ({ ...file, owned: true }))];
+  const files = [...extra, ...generateFiles(plan)];
   const code = apply(detection.root, files, options);
   if (code === 0 && !options.dryRun) printNextSteps(plan, options);
   return code;
 }
 
-/** `hollow upgrade`: regenerate every file The Hollow owns from hollow.yml. */
+/**
+ * `hollow upgrade`: regenerate every file The Hollow owns from hollow.yml. Starting-point files
+ * (PR template, CODEOWNERS, .editorconfig) belong to the developer, so upgrade leaves them out;
+ * `hollow init` adds any that are missing.
+ */
 export function upgrade(options: GenerateOptions): number {
   const detection = detect(options);
   if (detection === null) return 1;
@@ -103,7 +107,7 @@ export function upgrade(options: GenerateOptions): number {
   }
   const plan = makePlan(detection, existing.config, options);
   if (plan === null) return 1;
-  const files = generateFiles(plan).map((file) => ({ ...file, owned: true }));
+  const files = generateFiles(plan).filter((file) => file.kind !== "scaffold");
   const code = apply(detection.root, files, options);
   if (code === 0 && !options.dryRun) printNotes(plan, options);
   return code;
@@ -139,7 +143,7 @@ function reportInvalid(errors: string[], options: GenerateOptions): void {
  * Check every file before writing any: refuse to overwrite files The Hollow did not write (unless
  * --force), lint workflows, then write. Either everything is written or nothing is.
  */
-function apply(root: string, files: FileToWrite[], options: GenerateOptions): number {
+function apply(root: string, files: GeneratedFile[], options: GenerateOptions): number {
   const project = new ProjectFiles(root);
   const changes = new Map<string, Change>();
   const conflicts: string[] = [];
@@ -151,10 +155,14 @@ function apply(root: string, files: FileToWrite[], options: GenerateOptions): nu
     const current = project.readText(file.path);
     if (current === file.content) {
       changes.set(file.path, "unchanged");
-    } else if (file.owned && current !== null && isGenerated(current)) {
+    } else if (file.kind === "scaffold") {
+      changes.set(file.path, "kept");
+    } else if (current !== null && isGenerated(current)) {
       changes.set(file.path, "update");
     } else if (options.force) {
       changes.set(file.path, "update");
+    } else if (file.kind === "generated-optional") {
+      changes.set(file.path, "kept");
     } else {
       conflicts.push(file.path);
     }
@@ -185,9 +193,11 @@ function apply(root: string, files: FileToWrite[], options: GenerateOptions): nu
 
   for (const file of files) {
     const change = changes.get(file.path) ?? "unchanged";
-    if (!options.dryRun && change !== "unchanged") writeProjectFile(root, file.path, file.content);
-    const label = options.dryRun && change !== "unchanged" ? `would ${change}` : change;
-    options.stdout(`  ${label.padEnd(14)} ${file.path}\n`);
+    const writes = change === "create" || change === "update";
+    if (!options.dryRun && writes) writeProjectFile(root, file.path, file.content);
+    const label = options.dryRun && writes ? `would ${change}` : change;
+    const why = change === "kept" ? "  (yours, left as is)" : "";
+    options.stdout(`  ${label.padEnd(14)} ${file.path}${why}\n`);
   }
   if (lintSkipped) {
     options.stdout(
@@ -209,8 +219,13 @@ function printNextSteps(plan: PipelinePlan, options: GenerateOptions): void {
       "",
       "Next steps",
       "  1. Review the new files (git status, git diff).",
-      "  2. Commit them on a branch and open a pull request. The pipeline runs on that pull request.",
-      `  3. Once it passes, require the "CI passed" check in branch protection for ${plan.defaultBranch}.`,
+      '  2. Commit them on a branch and open a pull request with a Conventional Commit title, such as "ci: add The Hollow pipeline". The pipeline runs on that pull request.',
+      `  3. Once it passes, require the "CI passed" and "Conventional Commit title" checks in branch protection for ${plan.defaultBranch}.`,
+      ...(plan.existingHooks === null
+        ? [
+            "  4. Turn on the git hooks in each clone: pipx install pre-commit && pre-commit install",
+          ]
+        : []),
       "",
     ].join("\n"),
   );

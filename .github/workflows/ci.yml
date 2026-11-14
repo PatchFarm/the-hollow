@@ -74,7 +74,7 @@ jobs:
       - name: Lint this repo's workflows and every generated golden workflow
         run: |
           shellcheck --version | head -2
-          "$RUNNER_TEMP/actionlint" -color .github/workflows/*.yml test/golden/*/ci.yml
+          "$RUNNER_TEMP/actionlint" -color .github/workflows/*.yml test/golden/*/ci.yml test/golden/*/pr-title.yml
 
   # One stable check name for branch protection, whatever the matrix looks like.
   ci-passed:

@@ -52,6 +52,11 @@ export function renderGenerated(data: object, options: RenderOptions): string {
   return `${header.map((line, i) => (i === 0 ? line : `# ${line}`)).join("\n")}\n\n${doc.toString({ lineWidth: 0, nullStr: "" })}`;
 }
 
+/** A GitHub Actions expression, `${{ ... }}`. */
+export function expr(expression: string): string {
+  return `\${{ ${expression} }}`;
+}
+
 /** True when a file was written by The Hollow and can be regenerated. */
 export function isGenerated(text: string): boolean {
   return text.startsWith(GENERATED_MARKER);
