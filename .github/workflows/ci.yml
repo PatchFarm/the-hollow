@@ -44,19 +44,50 @@ jobs:
           node dist/cli.js --version
           node dist/cli.js plan --cwd test/fixtures/python-fastapi
           node dist/cli.js plan --json --cwd test/fixtures/node-next-prisma > /dev/null
+          cp -R test/fixtures/node-hono-workers "$RUNNER_TEMP/smoke"
+          node dist/cli.js init --yes --cwd "$RUNNER_TEMP/smoke"
+          node dist/cli.js upgrade --cwd "$RUNNER_TEMP/smoke"
+
+  # The generated workflows never run here, so lint every golden file to prove they are valid.
+  actionlint:
+    name: Lint workflows (actionlint)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install actionlint 1.7.12
+        env:
+          URL: https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
+          SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+        run: |
+          curl --fail --silent --show-error --location --retry 3 --output "$RUNNER_TEMP/actionlint.tar.gz" "$URL"
+          echo "$SHA256  $RUNNER_TEMP/actionlint.tar.gz" | sha256sum --check --strict
+          tar --extract --gzip --file "$RUNNER_TEMP/actionlint.tar.gz" --directory "$RUNNER_TEMP" actionlint
+
+      # shellcheck is preinstalled on the runner, so the run: scripts get checked too.
+      - name: Lint this repo's workflows and every generated golden workflow
+        run: |
+          shellcheck --version | head -2
+          "$RUNNER_TEMP/actionlint" -color .github/workflows/*.yml test/golden/*/ci.yml
 
   # One stable check name for branch protection, whatever the matrix looks like.
   ci-passed:
     name: CI passed
     if: always()
-    needs: [test]
+    needs: [test, actionlint]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     permissions: {}
     steps:
-      - name: Fail unless every test job succeeded
+      - name: Fail unless every job succeeded
         env:
-          RESULT: ${{ needs.test.result }}
+          TEST: ${{ needs.test.result }}
+          ACTIONLINT: ${{ needs.actionlint.result }}
         run: |
-          echo "test jobs: $RESULT"
-          test "$RESULT" = "success"
+          echo "test: $TEST, actionlint: $ACTIONLINT"
+          test "$TEST" = "success" && test "$ACTIONLINT" = "success"

@@ -2,22 +2,22 @@ import { readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { loadConfig } from "../config/load.js";
 import { detectProject } from "../detect/index.js";
+import { planPipeline } from "../pipeline/plan.js";
 import { formatPlan } from "./format.js";
+import { init, upgrade } from "./generate-command.js";
+import type { Ask } from "./interview.js";
 
 export interface Io {
   stdout: (text: string) => void;
   stderr: (text: string) => void;
   cwd: string;
+  /** Prompt the person at the keyboard. Absent when input is not a terminal. */
+  ask?: Ask;
 }
 
 /** Commands from docs/SCOPE.md that are planned but not built yet, with the milestone that ships them. */
 const PLANNED: Record<string, { milestone: string; summary: string }> = {
-  init: {
-    milestone: "M1",
-    summary: "Detect, interview, and generate a pipeline as a pull request",
-  },
   check: { milestone: "M1", summary: "Run the pipeline's CI checks locally" },
-  upgrade: { milestone: "M1", summary: "Regenerate workflows from hollow.yml" },
   secrets: { milestone: "M2", summary: "List and set the secrets each environment needs" },
   fix: { milestone: "M5", summary: "Repair the latest failed pipeline run" },
   doctor: {
@@ -32,7 +32,9 @@ Usage:
   hollow <command> [options]
 
 Commands:
-  plan        Show what The Hollow detects in this project and validate hollow.yml (read-only)
+  plan        Show what The Hollow detects and the CI it would generate (read-only)
+  init        Create hollow.yml and generate the CI workflow and Dependabot config
+  upgrade     Regenerate the files The Hollow owns from hollow.yml
 ${Object.entries(PLANNED)
   .map(
     ([name, { milestone, summary }]) => `  ${name.padEnd(10)}  ${summary} (coming in ${milestone})`,
@@ -40,15 +42,27 @@ ${Object.entries(PLANNED)
   .join("\n")}
 
 Options:
-  --cwd <dir>  Project directory (default: current directory)
-  --json       Machine-readable output (plan only)
-  -h, --help   Show this help
+  --cwd <dir>        Project directory (default: current directory)
+  --json             Machine-readable output (plan)
+  --dry-run          Show what would change without writing anything (init, upgrade)
+  --force            Replace existing files The Hollow did not write (init, upgrade)
+  --target <name>    Deploy target: vercel, cloudflare-workers, cloudflare-pages, docker, vps (init)
+  --yes              Accept every suggested answer without asking (init)
+  --no-ai            Never call a model. This release makes no AI calls, so it is the default.
+  -h, --help         Show this help
   -v, --version
 `;
 
 export const EXIT = { ok: 0, failure: 1, usage: 2 } as const;
 
-export function run(argv: readonly string[], io: Io): number {
+const COMMAND_OPTIONS: Record<string, readonly string[]> = {
+  plan: ["json"],
+  init: ["dry-run", "force", "target", "yes"],
+  upgrade: ["dry-run", "force"],
+};
+const GLOBAL_OPTIONS = ["cwd", "help", "version", "no-ai"];
+
+export async function run(argv: readonly string[], io: Io): Promise<number> {
   let parsed: ReturnType<typeof parse>;
   try {
     parsed = parse(argv);
@@ -72,9 +86,41 @@ export function run(argv: readonly string[], io: Io): number {
     return EXIT.usage;
   }
 
-  if (command === "plan") {
-    return plan(values.cwd ?? io.cwd, values.json ?? false, io);
+  const allowed = COMMAND_OPTIONS[command];
+  if (allowed !== undefined) {
+    const misplaced = Object.keys(values).find(
+      (name) => !GLOBAL_OPTIONS.includes(name) && !allowed.includes(name),
+    );
+    if (misplaced !== undefined) {
+      io.stderr(`--${misplaced} does not apply to \`hollow ${command}\`.\n`);
+      return EXIT.usage;
+    }
   }
+
+  const dir = values.cwd ?? io.cwd;
+  const output = { stdout: io.stdout, stderr: io.stderr };
+  switch (command) {
+    case "plan":
+      return plan(dir, values.json ?? false, io);
+    case "init":
+      return init({
+        dir,
+        force: values.force ?? false,
+        dryRun: values["dry-run"] ?? false,
+        target: values.target,
+        yes: values.yes ?? false,
+        ask: io.ask,
+        ...output,
+      });
+    case "upgrade":
+      return upgrade({
+        dir,
+        force: values.force ?? false,
+        dryRun: values["dry-run"] ?? false,
+        ...output,
+      });
+  }
+
   const planned = PLANNED[command];
   if (planned !== undefined) {
     io.stderr(
@@ -94,6 +140,11 @@ function parse(argv: readonly string[]) {
     options: {
       cwd: { type: "string" },
       json: { type: "boolean" },
+      "dry-run": { type: "boolean" },
+      force: { type: "boolean" },
+      target: { type: "string" },
+      yes: { type: "boolean", short: "y" },
+      "no-ai": { type: "boolean" },
       help: { type: "boolean", short: "h" },
       version: { type: "boolean", short: "v" },
     },
@@ -109,11 +160,14 @@ function plan(dir: string, json: boolean, io: Io): number {
     return EXIT.failure;
   }
   const config = loadConfig(detection.root);
+  const pipeline = planPipeline(detection, config.status === "ok" ? config.config : null);
 
   if (json) {
-    io.stdout(`${JSON.stringify({ detection, config }, null, 2)}\n`);
+    io.stdout(
+      `${JSON.stringify({ detection, config, pipeline: pipeline.status === "ok" ? pipeline.plan : null }, null, 2)}\n`,
+    );
   } else {
-    io.stdout(formatPlan(detection, config));
+    io.stdout(formatPlan(detection, config, pipeline));
   }
   return config.status === "invalid" ? EXIT.failure : EXIT.ok;
 }

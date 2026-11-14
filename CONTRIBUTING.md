@@ -21,8 +21,15 @@ CI runs all of these on Node 22 and 24 for every pull request.
 - `src/cli/`: argument parsing and output
 - `src/detect/`: project detection, one file per language plus shared signals
 - `src/config/`: the `hollow.yml` schema (zod) and loader
-- `src/util/project-files.ts`: the only way to read project files. It refuses paths and symlinks that leave the project root, so use it instead of `fs`
+- `src/pipeline/plan.ts`: the typed pipeline model (what CI runs for a project), built from detection plus `hollow.yml`
+- `src/generate/`: renders the model into workflow and config files. `pins.ts` holds every pinned action, binary and image
+- `src/util/project-files.ts` and `src/util/project-writer.ts`: the only way to read and write project files. They refuse paths and symlinks that leave the project root, so use them instead of `fs`
 - `test/fixtures/`: sample projects (see its README)
+- `test/golden/`: the reviewed output for each sample app. CI lints every golden workflow with actionlint
+
+**Changing a template:** make the change, run `npx vitest run -u` to update `test/golden/`, and review that diff as carefully as the code. It is exactly what users will get.
+
+**Updating a pin:** edit `src/generate/pins.ts`. Actions are pinned to the full commit SHA of a release tag, binaries to the publisher's SHA-256 checksum, images to a digest. A release has to be at least two weeks old before it is pinned.
 
 **Changing the hollow.yml schema:** edit `src/config/schema.ts`, then run `npm run schema` to regenerate `schema/hollow.schema.json`. A test fails if the two drift apart.
 

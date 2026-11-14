@@ -34,6 +34,11 @@
           "description": "Node or Python version, for example `22` or `3.13`.",
           "type": "string",
           "minLength": 1
+        },
+        "defaultBranch": {
+          "description": "Branch that CI runs on after merges. Defaults to `main`.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._/-]+$"
         }
       },
       "additionalProperties": false,

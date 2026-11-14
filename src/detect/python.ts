@@ -18,7 +18,7 @@ const DB_DRIVERS: ReadonlyArray<readonly [string, DatabaseEngine]> = [
   ["redis", "redis"],
 ];
 
-const REQUIREMENTS_FILES = [
+export const REQUIREMENTS_FILES = [
   "requirements.txt",
   "requirements-dev.txt",
   "requirements/base.txt",

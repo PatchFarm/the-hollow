@@ -37,6 +37,12 @@ export const projectSchema = z
       .min(1)
       .optional()
       .meta({ description: "Node or Python version, for example `22` or `3.13`." }),
+    defaultBranch: z
+      .string()
+      .regex(/^[A-Za-z0-9._/-]+$/, "must be a git branch name")
+      .refine((value) => !value.split("/").includes(".."), "must not contain `..`")
+      .optional()
+      .meta({ description: "Branch that CI runs on after merges. Defaults to `main`." }),
   })
   .meta({ description: "Overrides for what The Hollow detects. Leave empty to use detection." });
 
