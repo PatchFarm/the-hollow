@@ -8,13 +8,14 @@ import type {
 import { checkout, installBinary, lines, setupSteps } from "./ci.js";
 import { ACTIONS, BINARIES } from "./pins.js";
 import { expr, renderGenerated } from "./render.js";
+import { renderVercelPipeline } from "./vercel.js";
 
 export const RELEASE_WORKFLOW = ".github/workflows/release.yml";
 
-type Step = Record<string, unknown>;
-type Job = Record<string, unknown>;
+export type Step = Record<string, unknown>;
+export type Job = Record<string, unknown>;
 
-const RELEASE = "needs.release-please.outputs";
+export const RELEASE = "needs.release-please.outputs";
 
 /**
  * `.github/workflows/release.yml`: on every push to the default branch, release-please keeps a
@@ -23,6 +24,7 @@ const RELEASE = "needs.release-please.outputs";
  * Deploys (M3) will promote exactly this artifact.
  */
 export function renderReleaseWorkflow(plan: PipelinePlan, release: ReleasePlan): string {
+  if (plan.deploy?.vercel) return renderVercelPipeline(plan, release, plan.deploy);
   if (release.artifact.kind === "image" && plan.deploy !== null) {
     return renderImagePipeline(plan, release, release.artifact, plan.deploy);
   }
@@ -50,7 +52,7 @@ export function renderReleaseWorkflow(plan: PipelinePlan, release: ReleasePlan):
   });
 }
 
-function releasePleaseJob(release: ReleasePlan, ownConcurrency = false): Job {
+export function releasePleaseJob(release: ReleasePlan, ownConcurrency = false): Job {
   return {
     name: "Release PR and tag",
     "runs-on": "ubuntu-latest",
@@ -80,7 +82,7 @@ function releasePleaseJob(release: ReleasePlan, ownConcurrency = false): Job {
 }
 
 /** Values every artifact step reads from env, never from `${{ }}` inside a script. */
-function releaseEnv(): Record<string, string> {
+export function releaseEnv(): Record<string, string> {
   return { TAG: expr(`${RELEASE}.tag`), VERSION: expr(`${RELEASE}.version`) };
 }
 
@@ -242,7 +244,7 @@ function archiveJob(plan: PipelinePlan, artifact: ArchiveArtifact): Job {
 }
 
 const BUILD = "needs.build.outputs";
-const RELEASED = `${RELEASE}.released == 'true'`;
+export const RELEASED = `${RELEASE}.released == 'true'`;
 
 /**
  * Image targets build once on every merge to the default branch, deploy that image to staging,
@@ -471,13 +473,28 @@ function registrySteps(environment: DeployEnvironment): Step[] {
 }
 
 /** Checks the URL until it answers without a server error, for up to two minutes. */
-function healthCheck(url: string): Step {
+export function healthCheck(url: string, bypassSecret?: string): Step {
+  // With a bypass secret, send Vercel's protection bypass header so protected deployment URLs
+  // answer for real instead of with a login page.
+  const probe =
+    bypassSecret === undefined
+      ? []
+      : [
+          "probe() {",
+          '  if [ -n "$BYPASS" ]; then curl --header "x-vercel-protection-bypass: $BYPASS" "$@"; else curl "$@"; fi',
+          "}",
+        ];
+  const curl = bypassSecret === undefined ? "curl" : "probe";
   return {
     name: `Check ${url}`,
-    env: { URL: url },
+    env: {
+      URL: url,
+      ...(bypassSecret === undefined ? {} : { BYPASS: expr(`secrets.${bypassSecret}`) }),
+    },
     run: lines([
+      ...probe,
       "for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do",
-      '  code="$(curl --silent --location --max-time 10 --output /dev/null --write-out \'%{http_code}\' "$URL" || true)"',
+      `  code="$(${curl} --silent --location --max-time 10 --output /dev/null --write-out '%{http_code}' "$URL" || true)"`,
       '  if [ "$code" -ge 200 ] && [ "$code" -lt 500 ]; then',
       '    echo "$URL answered $code (attempt $attempt)."',
       "    exit 0",

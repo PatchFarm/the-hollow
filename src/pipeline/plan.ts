@@ -195,7 +195,11 @@ export function planPipeline(detection: Detection, config: HollowConfig | null):
           appPort,
         });
   const image = release?.artifact.kind === "image" ? release.artifact : null;
-  const deploy = config === null || image === null ? null : planDeploy(config, appPort);
+  const imageTarget = config?.deploy.target === "docker" || config?.deploy.target === "vps";
+  const deploy =
+    config === null || (imageTarget && image === null)
+      ? null
+      : planDeploy(config, appPort, files, notes);
   return {
     status: "ok",
     plan: {

@@ -20,6 +20,12 @@ import {
   renderEditorconfig,
   renderPrTemplate,
 } from "./scaffold.js";
+import {
+  PREVIEW_WORKFLOW,
+  renderPreviewWorkflow,
+  renderVercelJson,
+  VERCEL_JSON,
+} from "./vercel.js";
 
 /**
  * Who owns a file, which decides what `init` and `upgrade` may do with it:
@@ -96,6 +102,23 @@ export function generateFiles(plan: PipelinePlan): GeneratedFile[] {
         workflow: false,
       },
     );
+  }
+  const vercel = plan.deploy?.vercel;
+  if (vercel) {
+    files.splice(3, 0, {
+      path: PREVIEW_WORKFLOW,
+      content: renderPreviewWorkflow(plan, vercel),
+      kind: "generated",
+      workflow: true,
+    });
+    if (vercel.writeConfig) {
+      files.push({
+        path: VERCEL_JSON,
+        content: renderVercelJson(),
+        kind: "scaffold",
+        workflow: false,
+      });
+    }
   }
   if (plan.deploy?.vps) {
     files.push({

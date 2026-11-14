@@ -47,6 +47,16 @@ export const ACTIONS = {
     "v5.0.0",
   ),
   attest: action("actions/attest", "1e69f48acb82d1966a394da916b4c1698aa569d6", "v4.2.2"),
+  uploadArtifact: action(
+    "actions/upload-artifact",
+    "cf430e030ddbb5b0abf93d22962f4752f3646cd9",
+    "v7.0.2",
+  ),
+  downloadArtifact: action(
+    "actions/download-artifact",
+    "9000827ccba6bdab643e8b6fd33ac0654aef8333",
+    "v8.0.2",
+  ),
   codeqlInit: action(
     "github/codeql-action/init",
     "9b3254085494b55a0f7c4c2b3d2d52cc712ce370",
@@ -81,6 +91,19 @@ export const BINARIES = {
     sha256: "c7cbe3137fb8a48a17574bede3dd6beb16742d1e9772929940fc90082c39d9c0",
   },
 } as const satisfies Record<string, BinaryPin>;
+
+/**
+ * npm packages the pipeline installs as tools, pinned to the published tarball's SHA-512 and
+ * installed with `--ignore-scripts`.
+ */
+export const NPM_TOOLS = {
+  vercel: {
+    version: "65.9.0",
+    url: "https://registry.npmjs.org/vercel/-/vercel-65.9.0.tgz",
+    sha512:
+      "b913a31fe06964fd7c0d74ebba197825356f65b4593c81bcf6014df3167957ae962caebad1073edeb213013206f36ff2ac49b77771a96066af212739da4067ff",
+  },
+} as const;
 
 export const IMAGES = {
   semgrep: {

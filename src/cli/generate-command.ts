@@ -234,6 +234,13 @@ function printNextSteps(plan: PipelinePlan, options: GenerateOptions): void {
       `Prepare ${vps.host}: Docker with Compose 2.24 or newer, a ${vps.user} user allowed to run docker, and a reverse proxy that sends each domain to ${ports}.`,
       `Make an SSH key for deploys and add its public key to ${vps.user}'s ~/.ssh/authorized_keys. In each environment on GitHub (Settings > Environments), add the private key as the ${vps.sshKeySecret} secret and the output of \`ssh-keyscan -p ${vps.sshPort} ${vps.host}\` as the ${vps.knownHostsVariable} variable.`,
     );
+  } else if (deploy?.vercel) {
+    const vercel = deploy.vercel;
+    steps.push(
+      `Link the Vercel project: run \`npx vercel link\`, then add the orgId and projectId from .vercel/project.json as the ${vercel.orgIdVariable} and ${vercel.projectIdVariable} repository variables, and a Vercel token as the ${vercel.tokenSecret} secret (Settings > Secrets and variables > Actions).`,
+      `Optional: turn on Protection Bypass for Automation in the Vercel project and add its value as the ${vercel.bypassSecret} secret, so health checks can reach protected deployment URLs. Without it, a protected URL only shows the deployment is reachable.`,
+      "Staging is a production build that is not live yet, so it uses production's Vercel environment variables. Pull request previews use the Preview ones.",
+    );
   } else if (deploy !== null) {
     steps.push(
       "Every merge publishes the image and points its :staging tag at it; each release moves :production. Point whatever runs the container at those tags.",

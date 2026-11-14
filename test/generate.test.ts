@@ -174,6 +174,7 @@ describe("generated Dependabot config", () => {
     expect(actions?.["exclude-paths"]).toEqual([
       ".github/workflows/ci.yml",
       ".github/workflows/release.yml",
+      ".github/workflows/preview.yml",
     ]);
   });
 
