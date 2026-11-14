@@ -85,8 +85,9 @@ export function formatPlan(detection: Detection, config: LoadResult, pipeline: P
       row("Release", `release-please (${releaseType}); ${what}, with SBOM and provenance`);
     }
     if (plan.deploy !== null) {
-      const where =
-        plan.deploy.vps === null
+      const where = plan.deploy.vercel
+        ? "staged Vercel production deployment, promoted on release; previews for same-repo PRs"
+        : plan.deploy.vps === null
           ? "moves the environment's tag on GHCR"
           : `Docker Compose on ${plan.deploy.vps.host} over SSH`;
       const stages = plan.deploy.environments

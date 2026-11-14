@@ -2,6 +2,7 @@ import type { PipelinePlan } from "../pipeline/plan.js";
 import { CI_WORKFLOW } from "./ci.js";
 import { RELEASE_WORKFLOW } from "./release.js";
 import { renderGenerated } from "./render.js";
+import { PREVIEW_WORKFLOW } from "./vercel.js";
 
 export const DEPENDABOT_CONFIG = ".github/dependabot.yml";
 
@@ -32,7 +33,11 @@ export function renderDependabot(plan: PipelinePlan): string {
   // leaves those files alone and still covers every other workflow.
   updates.push(
     entry("github-actions", {
-      "exclude-paths": plan.release === null ? [CI_WORKFLOW] : [CI_WORKFLOW, RELEASE_WORKFLOW],
+      "exclude-paths": [
+        CI_WORKFLOW,
+        ...(plan.release === null ? [] : [RELEASE_WORKFLOW]),
+        ...(plan.deploy?.previews ? [PREVIEW_WORKFLOW] : []),
+      ],
     }),
   );
   if (plan.dockerfile !== null) updates.push(entry("docker"));

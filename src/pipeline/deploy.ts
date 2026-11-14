@@ -33,14 +33,29 @@ export interface VpsPlan {
   knownHostsVariable: string;
 }
 
-/** How the image is promoted through the environments. Null for targets M3 has not reached yet. */
+export interface VercelPlan {
+  tokenSecret: string;
+  orgIdVariable: string;
+  projectIdVariable: string;
+  bypassSecret: string;
+  /** True when init should write a vercel.json that turns off Vercel's own Git deploys. */
+  writeConfig: boolean;
+}
+
+/**
+ * How one build is promoted through the environments. Null for targets M3 has not reached yet.
+ * Docker and VPS promote an image digest; Vercel promotes a staged production deployment.
+ */
 export interface DeployPlan {
-  target: "docker" | "vps";
+  target: "docker" | "vps" | "vercel";
   environments: DeployEnvironment[];
   /** Port the app listens on inside the container. */
   appPort: number;
   healthPath: string;
   vps: VpsPlan | null;
+  vercel: VercelPlan | null;
+  /** Workflow for per-PR preview deploys, for targets that have them. */
+  previews: boolean;
 }
 
 /** What the starter Dockerfile needs to know. Null when the project has its own Dockerfile. */
@@ -65,9 +80,16 @@ export interface ContainerStarter {
 export const DEPLOY_COMPOSE = "deploy/compose.yaml";
 export const DEFAULT_APP_PORT: Record<Language, number> = { node: 3000, python: 8000 };
 
-export function planDeploy(config: HollowConfig, appPort: number): DeployPlan | null {
+export function planDeploy(
+  config: HollowConfig,
+  appPort: number,
+  files: ProjectFiles,
+  notes: string[],
+): DeployPlan | null {
   const { deploy, environments, verify } = config;
-  if (deploy.target !== "docker" && deploy.target !== "vps") return null;
+  if (deploy.target !== "docker" && deploy.target !== "vps" && deploy.target !== "vercel") {
+    return null;
+  }
   const health = (url: string | undefined) =>
     url === undefined ? null : `${url.replace(/\/+$/, "")}${verify.healthPath}`;
   const environment = (
@@ -83,7 +105,13 @@ export function planDeploy(config: HollowConfig, appPort: number): DeployPlan | 
   });
   const list = [environment("staging", environments.staging.url, 1)];
   if (environments.preprod.enabled) {
-    list.push(environment("preprod", environments.preprod.url, 2));
+    if (deploy.target === "vercel" && environments.preprod.url === undefined) {
+      notes.push(
+        "On Vercel, preprod points a domain at the release before production does, so it needs environments.preprod.url (a domain on your Vercel project). Without one, releases go from staging straight to production.",
+      );
+    } else {
+      list.push(environment("preprod", environments.preprod.url, 2));
+    }
   }
   list.push(environment("production", environments.production.url, 0));
   return {
@@ -102,7 +130,41 @@ export function planDeploy(config: HollowConfig, appPort: number): DeployPlan | 
             knownHostsVariable: deploy.knownHostsVariable,
           }
         : null,
+    vercel:
+      deploy.target === "vercel"
+        ? {
+            tokenSecret: deploy.tokenSecret,
+            orgIdVariable: deploy.orgIdVariable,
+            projectIdVariable: deploy.projectIdVariable,
+            bypassSecret: deploy.bypassSecret,
+            writeConfig: vercelConfig(files, notes),
+          }
+        : null,
+    previews: deploy.target === "vercel",
   };
+}
+
+/**
+ * Vercel also deploys every push itself when the project is connected to the repo, which would
+ * double every deploy. Returns true when init should write a vercel.json that turns that off.
+ */
+function vercelConfig(files: ProjectFiles, notes: string[]): boolean {
+  const text = files.readText("vercel.json");
+  if (text === null) return !files.exists("vercel.json");
+  let gitDeploys: unknown;
+  try {
+    const parsed: unknown = JSON.parse(text);
+    gitDeploys =
+      isRecord(parsed) && isRecord(parsed.git) ? parsed.git.deploymentEnabled : undefined;
+  } catch {
+    gitDeploys = undefined;
+  }
+  if (gitDeploys !== false) {
+    notes.push(
+      'Add "git": { "deploymentEnabled": false } to vercel.json. Otherwise Vercel also deploys every push itself, next to the pipeline.',
+    );
+  }
+  return false;
 }
 
 interface StarterInput {

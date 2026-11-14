@@ -81,6 +81,20 @@ export const environmentsSchema = z
 const vercelTarget = z.strictObject({
   target: z.literal("vercel"),
   tokenSecret: secretName.default("VERCEL_TOKEN"),
+  orgIdVariable: z
+    .string()
+    .regex(/^[A-Z][A-Z0-9_]*$/, "must be the NAME of a GitHub Actions variable (UPPER_SNAKE_CASE)")
+    .default("VERCEL_ORG_ID")
+    .meta({ description: "GitHub Actions variable holding the Vercel team (org) ID." }),
+  projectIdVariable: z
+    .string()
+    .regex(/^[A-Z][A-Z0-9_]*$/, "must be the NAME of a GitHub Actions variable (UPPER_SNAKE_CASE)")
+    .default("VERCEL_PROJECT_ID")
+    .meta({ description: "GitHub Actions variable holding the Vercel project ID." }),
+  bypassSecret: secretName.default("VERCEL_AUTOMATION_BYPASS_SECRET").meta({
+    description:
+      "Optional secret with Vercel's Protection Bypass for Automation value, so health checks can reach protected deployment URLs.",
+  }),
 });
 
 const cloudflareWorkersTarget = z.strictObject({

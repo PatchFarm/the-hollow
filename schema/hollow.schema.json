@@ -137,6 +137,24 @@
               "type": "string",
               "pattern": "^[A-Z][A-Z0-9_]*$",
               "description": "Name of a GitHub Actions secret. Never put secret values in hollow.yml."
+            },
+            "orgIdVariable": {
+              "default": "VERCEL_ORG_ID",
+              "description": "GitHub Actions variable holding the Vercel team (org) ID.",
+              "type": "string",
+              "pattern": "^[A-Z][A-Z0-9_]*$"
+            },
+            "projectIdVariable": {
+              "default": "VERCEL_PROJECT_ID",
+              "description": "GitHub Actions variable holding the Vercel project ID.",
+              "type": "string",
+              "pattern": "^[A-Z][A-Z0-9_]*$"
+            },
+            "bypassSecret": {
+              "default": "VERCEL_AUTOMATION_BYPASS_SECRET",
+              "description": "Optional secret with Vercel's Protection Bypass for Automation value, so health checks can reach protected deployment URLs.",
+              "type": "string",
+              "pattern": "^[A-Z][A-Z0-9_]*$"
             }
           },
           "required": [
