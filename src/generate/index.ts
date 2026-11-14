@@ -10,6 +10,8 @@ import {
   renderDockerfile,
   renderDockerignore,
 } from "./dockerfile.js";
+import { MIGRATION_CHECKER, renderMigrationChecker } from "./migration-check.js";
+import { MIGRATIONS_WORKFLOW, renderMigrationsWorkflow } from "./migrations.js";
 import { PR_TITLE_WORKFLOW, renderPrTitleWorkflow } from "./pr-title.js";
 import { PRE_COMMIT_CONFIG, renderPreCommit } from "./pre-commit.js";
 import { RELEASE_WORKFLOW, renderReleaseWorkflow } from "./release.js";
@@ -103,6 +105,20 @@ export function generateFiles(plan: PipelinePlan): GeneratedFile[] {
         workflow: false,
       },
     );
+  }
+  if (plan.migrations !== null) {
+    files.splice(2, 0, {
+      path: MIGRATIONS_WORKFLOW,
+      content: renderMigrationsWorkflow(plan.migrations),
+      kind: "generated",
+      workflow: true,
+    });
+    files.push({
+      path: MIGRATION_CHECKER,
+      content: renderMigrationChecker(),
+      kind: "generated",
+      workflow: false,
+    });
   }
   const cloudflare = plan.deploy?.cloudflare;
   if (cloudflare?.kind === "pages") {

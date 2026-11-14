@@ -43,6 +43,7 @@ updates:
     exclude-paths:
       - .github/workflows/ci.yml
       - .github/workflows/release.yml
+      - .github/workflows/migrations.yml
   - package-ecosystem: docker
     directory: /
     commit-message:

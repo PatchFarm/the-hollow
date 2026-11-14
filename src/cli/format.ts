@@ -74,6 +74,13 @@ export function formatPlan(detection: Detection, config: LoadResult, pipeline: P
     ];
     row("Security", `${scanners.join(", ")}; fails on ${plan.security.failOn} or worse`);
     if (plan.services.length > 0) row("Services", plan.services.map((s) => s.engine).join(", "));
+    if (plan.migrations !== null) {
+      const m = plan.migrations;
+      row(
+        "Migrations",
+        `${m.tool}: ${m.appliesInCi ? "applied to the CI database on every run" : "not applied in CI (no database)"}; destructive changes need the "${m.label}" label`,
+      );
+    }
     if (plan.release !== null) {
       const { artifact, releaseType } = plan.release;
       const what =
