@@ -1,10 +1,13 @@
 import type { DeployEnvironment, DeployPlan, VercelPlan } from "../pipeline/deploy.js";
 import type { PipelinePlan, ReleasePlan } from "../pipeline/plan.js";
 import { checkout, installBinary, lines, setupSteps } from "./ci.js";
+import { addProductionGate, DISPATCH, type ReleaseSource } from "./gate.js";
 import { ACTIONS, BINARIES, NPM_TOOLS } from "./pins.js";
 import {
+  GATE_COMMENT,
   healthCheck,
   type Job,
+  MANUAL_COMMENT,
   RELEASED,
   releaseEnv,
   releasePleaseJob,
@@ -37,16 +40,25 @@ export function renderVercelPipeline(
   jobs[ASSETS] = releaseAssetsJob();
   let previous = "deploy-staging";
   for (const environment of deploy.environments) {
-    if (environment.name === "staging") continue;
+    if (environment.name === "staging" || environment.name === "production") continue;
     const id = `deploy-${environment.name}`;
-    jobs[id] =
-      environment.name === "production"
-        ? productionJob(vercel, environment, previous)
-        : aliasJob(deploy, vercel, environment, previous);
+    jobs[id] = aliasJob(deploy, vercel, environment, previous);
     previous = id;
   }
+  const production = deploy.environments.find((environment) => environment.name === "production");
+  const last = previous;
+  const gated = addProductionGate(
+    jobs,
+    (source) => productionJob(vercel, production as DeployEnvironment, last, source),
+    "deployment",
+  );
   return renderGenerated(
-    { name: "Release", on: { push: { branches: [plan.defaultBranch] } }, permissions: {}, jobs },
+    {
+      name: "Release",
+      on: { push: { branches: [plan.defaultBranch] }, ...DISPATCH },
+      permissions: {},
+      jobs: gated,
+    },
     {
       about: [
         "Every merge deploys a staged production build to staging. Merging the release pull request promotes that same deployment.",
@@ -57,8 +69,10 @@ export function renderVercelPipeline(
           "Builds once with production settings and deploys without taking the production domains. This deployment is what a release promotes.",
         [`jobs.${ASSETS}`]:
           "A release attaches the build output, its SBOM and the deployment URL. Provenance was attested when it was built.",
+        "jobs.production-gate": GATE_COMMENT,
         "jobs.deploy-production":
           "Waits for the production environment's approval, then promotes the staged deployment. Nothing is rebuilt.",
+        "jobs.deploy-production-manual": MANUAL_COMMENT,
       },
     },
   );
@@ -288,8 +302,13 @@ function aliasJob(
 }
 
 /** Production: promote the staged deployment, check it, and roll back to the previous one. */
-function productionJob(vercel: VercelPlan, environment: DeployEnvironment, previous: string): Job {
-  const deployment = expr("needs.deploy-staging.outputs.url");
+function productionJob(
+  vercel: VercelPlan,
+  environment: DeployEnvironment,
+  previous: string,
+  source: ReleaseSource,
+): Job {
+  const deployment = source.deployment;
   const steps: Step[] = [installVercel()];
   const host = environment.url === null ? null : hostOf(environment.url);
   if (host !== null) {

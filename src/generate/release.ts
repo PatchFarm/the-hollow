@@ -7,6 +7,7 @@ import type {
 } from "../pipeline/plan.js";
 import { checkout, installBinary, lines, setupSteps } from "./ci.js";
 import { renderCloudflarePipeline } from "./cloudflare.js";
+import { addProductionGate, DISPATCH, FROM_RUN, type ReleaseSource } from "./gate.js";
 import { ACTIONS, BINARIES } from "./pins.js";
 import { expr, renderGenerated } from "./render.js";
 import { renderVercelPipeline } from "./vercel.js";
@@ -270,20 +271,31 @@ function renderImagePipeline(
       "A release tags the image with its version and attaches the SBOM and digest.",
   };
   let previous: string | null = null;
+  let production: DeployEnvironment | null = null;
   for (const environment of deploy.environments) {
+    if (environment.name === "production") {
+      production = environment;
+      continue;
+    }
     const id = `deploy-${environment.name}`;
     jobs[id] = deployJob(deploy, environment, previous);
-    if (environment.name === "production") {
-      comments[`jobs.${id}`] =
-        "Waits for the production environment's approval, then promotes the same digest.";
-    }
     previous = id;
   }
+  const last = previous;
+  const productionEnvironment = production as DeployEnvironment;
+  comments["jobs.production-gate"] = GATE_COMMENT;
+  comments["jobs.deploy-production"] =
+    "Waits for the production environment's approval, then promotes the same digest.";
+  comments["jobs.deploy-production-manual"] = MANUAL_COMMENT;
   const workflow = {
     name: "Release",
-    on: { push: { branches: [plan.defaultBranch] } },
+    on: { push: { branches: [plan.defaultBranch] }, ...DISPATCH },
     permissions: {},
-    jobs,
+    jobs: addProductionGate(
+      jobs,
+      (source) => deployJob(deploy, productionEnvironment, last, source),
+      "image",
+    ),
   };
   return renderGenerated(workflow, {
     about: [
@@ -405,10 +417,16 @@ function releaseAssetsJob(): Job {
   };
 }
 
+export const GATE_COMMENT =
+  "Production deploys automatically only when its environment has required reviewers. Otherwise the release waits for a manual run.";
+export const MANUAL_COMMENT =
+  "A person with write access runs this workflow with a release version: that run is the approval, and it deploys the release's own artifact.";
+
 function deployJob(
   deploy: DeployPlan,
   environment: DeployEnvironment,
   previous: string | null,
+  source: ReleaseSource = FROM_RUN,
 ): Job {
   const needs = environment.onRelease
     ? ["release-please", "build", "release-assets", ...(previous === null ? [] : [previous])]
@@ -429,19 +447,19 @@ function deployJob(
     return {
       ...job,
       permissions: { packages: "write" },
-      steps: registrySteps(environment),
+      steps: registrySteps(environment, source),
     };
   }
   return {
     ...job,
     permissions: { contents: "read", packages: "read" },
-    steps: vpsSteps(deploy, environment),
+    steps: vpsSteps(deploy, environment, source),
   };
 }
 
 /** Docker target: move the environment's tag (`:staging`, `:production`) to the new digest. */
-function registrySteps(environment: DeployEnvironment): Step[] {
-  const env = { ...imageEnv(), TAG_NAME: environment.name };
+function registrySteps(environment: DeployEnvironment, source: ReleaseSource): Step[] {
+  const env = { IMAGE: source.image, DIGEST: source.digest, TAG_NAME: environment.name };
   const steps: Step[] = [
     ghcrLogin(),
     {
@@ -529,7 +547,11 @@ const REMOTE_COMPOSE = [
   "}",
 ];
 
-function vpsSteps(deploy: DeployPlan, environment: DeployEnvironment): Step[] {
+function vpsSteps(
+  deploy: DeployPlan,
+  environment: DeployEnvironment,
+  source: ReleaseSource,
+): Step[] {
   const vps = deploy.vps;
   if (vps === null) return [];
   const name = environment.name;
@@ -541,7 +563,7 @@ function vpsSteps(deploy: DeployPlan, environment: DeployEnvironment): Step[] {
     ENVIRONMENT: name,
   };
   const steps: Step[] = [
-    checkout(),
+    source.manual ? checkout({ ref: source.tag }) : checkout(),
     {
       name: "Set up SSH",
       env: {
@@ -568,7 +590,7 @@ function vpsSteps(deploy: DeployPlan, environment: DeployEnvironment): Step[] {
       id: "deploy",
       env: {
         ...server,
-        IMAGE_REF: `${expr(`${BUILD}.image`)}@${expr(`${BUILD}.digest`)}`,
+        IMAGE_REF: `${source.image}@${source.digest}`,
         APP_PORT: expr(`vars.APP_PORT || '${environment.hostPort}'`),
         GH_TOKEN: expr("github.token"),
       },

@@ -30,7 +30,6 @@ type Workflow = { jobs: Record<string, Job> };
 
 const WORKERS = { target: "cloudflare-workers" } as const;
 const PAGES = { target: "cloudflare-pages", projectName: "site" } as const;
-const RELEASED = expr("needs.release-please.outputs.released == 'true'");
 
 function plan(
   deploy: HollowConfigInput["deploy"],
@@ -55,10 +54,12 @@ describe("Cloudflare Workers deploys", () => {
       "release-please",
       "deploy-staging",
       "release-assets",
+      "production-gate",
       "deploy-production",
+      "deploy-production-manual",
     ]);
     const staging = wf.jobs["deploy-staging"];
-    expect(staging?.if).toBeUndefined();
+    expect(staging?.if).toBe(expr("github.event_name == 'push'"));
     expect(staging?.permissions).toEqual({
       contents: "read",
       "id-token": "write",
@@ -77,8 +78,17 @@ describe("Cloudflare Workers deploys", () => {
     expect(staging?.steps.filter((s) => s.uses === ACTIONS.attest.uses)).toHaveLength(2);
 
     const production = wf.jobs["deploy-production"];
-    expect(production?.needs).toEqual(["release-please", "deploy-staging", "release-assets"]);
-    expect(production?.if).toBe(RELEASED);
+    expect(production?.needs).toEqual([
+      "release-please",
+      "deploy-staging",
+      "release-assets",
+      "production-gate",
+    ]);
+    expect(production?.if).toBe(
+      expr(
+        "needs.release-please.outputs.released == 'true' && needs.production-gate.outputs.reviewed == 'true'",
+      ),
+    );
     const promote = step(production, "Send all traffic to the staged version");
     expect(promote?.env?.VERSION_ID).toBe(expr("needs.deploy-staging.outputs.version"));
     expect(promote?.run).toContain('versions deploy "$VERSION_ID@100%" --yes');
@@ -169,7 +179,11 @@ describe("Cloudflare Pages deploys", () => {
     expect(step(staging, "Keep the build and SBOM")?.uses).toBe(ACTIONS.uploadArtifact.uses);
 
     const production = wf.jobs["deploy-production"];
-    expect(production?.if).toBe(RELEASED);
+    expect(production?.if).toBe(
+      expr(
+        "needs.release-please.outputs.released == 'true' && needs.production-gate.outputs.reviewed == 'true'",
+      ),
+    );
     expect(step(production, "Fetch the staged build")?.uses).toBe(ACTIONS.downloadArtifact.uses);
     expect(JSON.stringify(production)).not.toContain("pnpm run build");
     const promote = step(production, "Deploy the staged build to the main branch")?.run ?? "";

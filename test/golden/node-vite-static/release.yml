@@ -8,6 +8,12 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release to deploy to production, for example v1.4.0. Running this is the approval.
+        required: true
+        type: string
 
 permissions: {}
 
@@ -34,6 +40,7 @@ jobs:
         with:
           release-type: node
           token: ${{ secrets.RELEASE_PLEASE_TOKEN || github.token }}
+    if: ${{ github.event_name == 'push' }}
 
   # Builds once, attests the output, and deploys it as a preview on the staging branch.
   deploy-staging:
@@ -151,6 +158,7 @@ jobs:
           echo "::error title=Health check::$URL did not answer without a server error within two minutes (last status: $code)."
           exit 1
         if: ${{ steps.deploy.outputs.url != '' }}
+    if: ${{ github.event_name == 'push' }}
 
   # A release attaches the build, its SBOM and what was deployed. Provenance was attested when it was built.
   release-assets:
@@ -179,6 +187,42 @@ jobs:
           echo "$STAGING_URL" > "$RUNNER_TEMP/assets/staging-url.txt"
           gh release upload "$TAG" "$RUNNER_TEMP"/assets/* --repo "$GITHUB_REPOSITORY" --clobber
 
+  # Production deploys automatically only when its environment has required reviewers. Otherwise the release waits for a manual run.
+  production-gate:
+    name: Check the production approval
+    needs:
+      - release-please
+    if: ${{ needs.release-please.outputs.released == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+    outputs:
+      reviewed: ${{ steps.check.outputs.reviewed }}
+    steps:
+      - name: Look for required reviewers on production
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.release-please.outputs.tag }}
+        run: |
+          reviewers="$(gh api "repos/$GITHUB_REPOSITORY/environments/production" --jq '[.protection_rules[]? | select(.type == "required_reviewers")] | length' 2> /dev/null || echo 0)"
+          if [ "$reviewers" -gt 0 ]; then
+            echo "reviewed=true" >> "$GITHUB_OUTPUT"
+            echo "Production waits for its required reviewers." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          echo "reviewed=false" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Production needs a manual approval"
+            echo "The production environment has no required reviewers (GitHub offers them on private repos only with Enterprise), so $TAG was not deployed automatically."
+            echo "To approve it, someone with write access runs the Release workflow with version $TAG, from the Actions tab or with:"
+            echo '```'
+            echo "gh workflow run release.yml -f version=$TAG"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::warning title=Production not deployed::Run the Release workflow with version $TAG to deploy it to production."
+
   # Waits for the production environment's approval, then deploys the staged output to the production branch.
   deploy-production:
     name: Deploy to production
@@ -186,7 +230,8 @@ jobs:
       - release-please
       - deploy-staging
       - release-assets
-    if: ${{ needs.release-please.outputs.released == 'true' }}
+      - production-gate
+    if: ${{ needs.release-please.outputs.released == 'true' && needs.production-gate.outputs.reviewed == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: production
@@ -232,6 +277,117 @@ jobs:
         with:
           name: release-assets
           path: ${{ runner.temp }}/assets
+      - name: Unpack it
+        run: |
+          mkdir -p "$RUNNER_TEMP/site"
+          tar --extract --gzip --file "$(ls "$RUNNER_TEMP"/assets/*.tar.gz)" --directory "$RUNNER_TEMP/site"
+      - name: Deploy the staged build to the main branch
+        id: promote
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          PROJECT: fixture-vite-static
+        run: |
+          export WRANGLER_OUTPUT_FILE_PATH="$RUNNER_TEMP/wrangler.ndjson"
+          wrangler pages deploy "$RUNNER_TEMP/site" --project-name "$PROJECT" --branch "main" --commit-hash "$GITHUB_SHA"
+          entry="$(jq --compact-output 'select(.type == "pages-deploy-detailed")' "$WRANGLER_OUTPUT_FILE_PATH" | tail -n 1)"
+          url="$(echo "$entry" | jq --raw-output '.alias // .url // empty')"
+          environment="$(echo "$entry" | jq --raw-output '.environment // empty')"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "environment=$environment" >> "$GITHUB_OUTPUT"
+          echo "Deployed to $environment: $url" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$environment" != "production" ]; then
+            echo "::error title=Not production::Cloudflare made a $environment deployment. Set the Pages project's production branch to main."
+            exit 1
+          fi
+      - name: Check ${{ steps.promote.outputs.url }}/
+        env:
+          URL: ${{ steps.promote.outputs.url }}/
+        run: |
+          for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
+            code="$(curl --silent --location --max-time 10 --output /dev/null --write-out '%{http_code}' "$URL" || true)"
+            if [ "$code" -ge 200 ] && [ "$code" -lt 500 ]; then
+              echo "$URL answered $code (attempt $attempt)."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error title=Health check::$URL did not answer without a server error within two minutes (last status: $code)."
+          exit 1
+
+  # A person with write access runs this workflow with a release version: that run is the approval, and it deploys the release's own artifact.
+  deploy-production-manual:
+    name: Deploy a release to production (manual approval)
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    steps:
+      - name: Find the release to deploy
+        id: release
+        env:
+          INPUT: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          case "$INPUT" in
+            '' | *[!A-Za-z0-9._-]*)
+              echo "::error title=Version::Enter a release version such as v1.4.0."
+              exit 1
+              ;;
+          esac
+          tag="$INPUT"
+          if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then tag="v$INPUT"; fi
+          if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "::error title=Version::There is no release $INPUT."
+            exit 1
+          fi
+          assets="$RUNNER_TEMP/assets"
+          mkdir -p "$assets"
+          gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir "$assets"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
+          if ! ls "$assets"/*.tar.gz > /dev/null 2>&1; then
+            echo "::error title=Release assets::$tag has no build archive, so there is nothing to deploy."
+            exit 1
+          fi
+          echo "Deploying release $tag to production, approved by $GITHUB_ACTOR running this workflow." >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ steps.release.outputs.tag }}
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: lts/*
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install wrangler 4.156.0
+        env:
+          URL: https://registry.npmjs.org/wrangler/-/wrangler-4.156.0.tgz
+          SHA512: 9152c04a1b8b88d804de372b9977329837ff88f2833eb4b10027b9b9eba05bfdf71de341f44f4290a61c86e742781c209ac9e5e24fb5cede0d3bbbea6ff7d1b9
+        run: |
+          curl --fail --silent --show-error --location --retry 3 --output "$RUNNER_TEMP/wrangler.tgz" "$URL"
+          echo "$SHA512  $RUNNER_TEMP/wrangler.tgz" | sha512sum --check --strict
+          npm install --global --ignore-scripts --no-audit --no-fund "$RUNNER_TEMP/wrangler.tgz"
+      - name: Confirm the Cloudflare token and account ID
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "::error title=Missing secret::Add a Cloudflare API token as the CLOUDFLARE_API_TOKEN secret (Settings > Secrets and variables > Actions)."
+            exit 1
+          fi
+          if [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::error title=Missing variable::Add your Cloudflare account ID as the CLOUDFLARE_ACCOUNT_ID variable."
+            exit 1
+          fi
       - name: Unpack it
         run: |
           mkdir -p "$RUNNER_TEMP/site"
