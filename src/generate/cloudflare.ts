@@ -1,10 +1,13 @@
 import type { CloudflarePlan, DeployEnvironment, DeployPlan } from "../pipeline/deploy.js";
 import type { PipelinePlan, ReleasePlan } from "../pipeline/plan.js";
 import { checkout, installBinary, lines, setupSteps } from "./ci.js";
+import { addProductionGate, DISPATCH, FROM_RUN, type ReleaseSource, sourceEnv } from "./gate.js";
 import { ACTIONS, BINARIES, NPM_TOOLS } from "./pins.js";
 import {
+  GATE_COMMENT,
   healthCheck,
   type Job,
+  MANUAL_COMMENT,
   RELEASED,
   releaseEnv,
   releasePleaseJob,
@@ -42,15 +45,28 @@ export function renderCloudflarePipeline(
   jobs[ASSETS] = releaseAssetsJob(workers);
   let previous = "deploy-staging";
   for (const environment of deploy.environments) {
-    if (environment.name === "staging") continue;
+    if (environment.name === "staging" || environment.name === "production") continue;
     const id = `deploy-${environment.name}`;
-    jobs[id] = workers
-      ? workersProductionJob(plan, cf, environment, previous)
-      : pagesReleaseJob(plan, deploy, cf, environment, previous);
+    jobs[id] = pagesReleaseJob(plan, deploy, cf, environment, previous, FROM_RUN);
     previous = id;
   }
+  const production = deploy.environments.find((environment) => environment.name === "production");
+  const last = previous;
+  const gated = addProductionGate(
+    jobs,
+    (source) =>
+      workers
+        ? workersProductionJob(plan, cf, production as DeployEnvironment, last, source)
+        : pagesReleaseJob(plan, deploy, cf, production as DeployEnvironment, last, source),
+    workers ? "worker" : "archive",
+  );
   return renderGenerated(
-    { name: "Release", on: { push: { branches: [plan.defaultBranch] } }, permissions: {}, jobs },
+    {
+      name: "Release",
+      on: { push: { branches: [plan.defaultBranch] }, ...DISPATCH },
+      permissions: {},
+      jobs: gated,
+    },
     {
       about: [
         workers
@@ -67,6 +83,8 @@ export function renderCloudflarePipeline(
         "jobs.deploy-production": workers
           ? "Waits for the production environment's approval, then sends all traffic to the staged version."
           : "Waits for the production environment's approval, then deploys the staged output to the production branch.",
+        "jobs.production-gate": GATE_COMMENT,
+        "jobs.deploy-production-manual": MANUAL_COMMENT,
       },
     },
   );
@@ -80,8 +98,12 @@ function cloudflareEnv(cf: CloudflarePlan): Record<string, string> {
 }
 
 /** Install dependencies (and the pinned wrangler when the project has none), then check setup. */
-function prepare(plan: PipelinePlan, cf: CloudflarePlan): Step[] {
-  const steps: Step[] = [checkout(), ...setupSteps(plan)];
+function prepare(plan: PipelinePlan, cf: CloudflarePlan, source?: ReleaseSource): Step[] {
+  // A manual run deploys an older release, so it works from that release's tag.
+  const steps: Step[] = [
+    source?.manual ? checkout({ ref: source.tag }) : checkout(),
+    ...setupSteps(plan),
+  ];
   steps.push({ name: "Install dependencies", run: lines(plan.install) });
   if (cf.pinnedWrangler) {
     const pin = NPM_TOOLS.wrangler;
@@ -322,9 +344,10 @@ function workersProductionJob(
   cf: CloudflarePlan,
   environment: DeployEnvironment,
   previous: string,
+  source: ReleaseSource,
 ): Job {
   const steps: Step[] = [
-    ...prepare(plan, cf),
+    ...prepare(plan, cf, source),
     {
       name: "Note the version production serves now",
       id: "current",
@@ -339,8 +362,8 @@ function workersProductionJob(
       id: "promote",
       env: {
         ...cloudflareEnv(cf),
-        ...releaseEnv(),
-        VERSION_ID: expr("needs.deploy-staging.outputs.version"),
+        ...sourceEnv(source),
+        VERSION_ID: source.workerVersion,
       },
       run: lines([
         `${cf.wrangler} versions deploy "$VERSION_ID@100%" --yes --message "Release $TAG"`,
@@ -354,7 +377,7 @@ function workersProductionJob(
       if: expr("failure() && steps.promote.outcome == 'success'"),
       env: {
         ...cloudflareEnv(cf),
-        ...releaseEnv(),
+        ...sourceEnv(source),
         PREVIOUS: expr("steps.current.outputs.previous"),
       },
       run: lines([
@@ -377,26 +400,28 @@ function pagesReleaseJob(
   cf: CloudflarePlan,
   environment: DeployEnvironment,
   previous: string,
+  source: ReleaseSource,
 ): Job {
   const production = environment.name === "production";
   const api = `https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/pages/projects/$PROJECT`;
   // A fresh object per step: shared objects would render as YAML anchors.
   const env = () => ({ ...cloudflareEnv(cf), PROJECT: cf.projectName as string });
-  const steps: Step[] = [
-    ...prepare(plan, cf),
-    {
+  const steps: Step[] = [...prepare(plan, cf, source)];
+  // A manual run already has the release's archive in $RUNNER_TEMP/assets.
+  if (!source.manual) {
+    steps.push({
       name: "Fetch the staged build",
       uses: ACTIONS.downloadArtifact.uses,
       with: { name: ASSETS, path: `${expr("runner.temp")}/assets` },
-    },
-    {
-      name: "Unpack it",
-      run: lines([
-        'mkdir -p "$RUNNER_TEMP/site"',
-        'tar --extract --gzip --file "$(ls "$RUNNER_TEMP"/assets/*.tar.gz)" --directory "$RUNNER_TEMP/site"',
-      ]),
-    },
-  ];
+    });
+  }
+  steps.push({
+    name: "Unpack it",
+    run: lines([
+      'mkdir -p "$RUNNER_TEMP/site"',
+      'tar --extract --gzip --file "$(ls "$RUNNER_TEMP"/assets/*.tar.gz)" --directory "$RUNNER_TEMP/site"',
+    ]),
+  });
   if (production && environment.healthUrl !== null) {
     steps.push({
       name: "Note the deployment production serves now",

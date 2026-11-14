@@ -61,10 +61,12 @@ describe("Vercel deploys", () => {
       "release-please",
       "deploy-staging",
       "release-assets",
+      "production-gate",
       "deploy-production",
+      "deploy-production-manual",
     ]);
     const staging = wf.jobs["deploy-staging"];
-    expect(staging?.if).toBeUndefined();
+    expect(staging?.if).toBe(expr("github.event_name == 'push'"));
     expect(staging?.permissions).toEqual({
       contents: "read",
       "id-token": "write",
@@ -77,8 +79,17 @@ describe("Vercel deploys", () => {
     expect(staging?.outputs).toEqual({ url: expr("steps.deploy.outputs.url") });
 
     const production = wf.jobs["deploy-production"];
-    expect(production?.needs).toEqual(["release-please", "deploy-staging", "release-assets"]);
-    expect(production?.if).toBe(RELEASED);
+    expect(production?.needs).toEqual([
+      "release-please",
+      "deploy-staging",
+      "release-assets",
+      "production-gate",
+    ]);
+    expect(production?.if).toBe(
+      expr(
+        "needs.release-please.outputs.released == 'true' && needs.production-gate.outputs.reviewed == 'true'",
+      ),
+    );
     expect(production?.permissions).toEqual({});
     const promote = step(production, "Promote the staged deployment");
     expect(promote?.env?.DEPLOYMENT).toBe(expr("needs.deploy-staging.outputs.url"));

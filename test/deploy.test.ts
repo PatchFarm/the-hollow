@@ -60,11 +60,13 @@ describe("deploy pipeline for image targets", () => {
       "build",
       "release-assets",
       "deploy-staging",
+      "production-gate",
       "deploy-production",
+      "deploy-production-manual",
     ]);
     const staging = wf.jobs["deploy-staging"];
     expect(staging?.needs).toEqual(["build"]);
-    expect(staging?.if).toBeUndefined();
+    expect(staging?.if).toBe(expr("github.event_name == 'push'"));
     expect(staging?.environment).toBe("staging");
     expect(staging?.concurrency).toEqual({ group: "deploy-staging", "cancel-in-progress": false });
 
@@ -74,8 +76,13 @@ describe("deploy pipeline for image targets", () => {
       "build",
       "release-assets",
       "deploy-staging",
+      "production-gate",
     ]);
-    expect(production?.if).toBe(RELEASED);
+    expect(production?.if).toBe(
+      expr(
+        "needs.release-please.outputs.released == 'true' && needs.production-gate.outputs.reviewed == 'true'",
+      ),
+    );
     expect(production?.environment).toBe("production");
   });
 

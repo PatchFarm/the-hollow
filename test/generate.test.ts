@@ -284,7 +284,7 @@ describe("release workflow", () => {
 
   it("runs release-please on pushes to the default branch, with the token secret as an option", () => {
     const wf = release("node-next-prisma");
-    expect(wf.on).toEqual({ push: { branches: ["main"] } });
+    expect(wf.on).toMatchObject({ push: { branches: ["main"] }, workflow_dispatch: {} });
     expect(steps(wf, "release-please")[0]).toMatchObject({
       uses: ACTIONS.releasePlease.uses,
       with: { "release-type": "node", token: expr("secrets.RELEASE_PLEASE_TOKEN || github.token") },
@@ -293,7 +293,7 @@ describe("release workflow", () => {
 
   it("builds the image once on every merge, with SBOM and provenance, for image targets", () => {
     const wf = release("python-fastapi");
-    expect(wf.jobs.build?.if).toBeUndefined();
+    expect(wf.jobs.build?.if).toBe(expr("github.event_name == 'push'"));
     expect(wf.jobs.build?.permissions).toEqual({
       contents: "read",
       packages: "write",

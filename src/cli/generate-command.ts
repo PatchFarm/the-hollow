@@ -263,6 +263,11 @@ function printNextSteps(plan: PipelinePlan, options: GenerateOptions): void {
       `Set environments.<name>.url in hollow.yml for ${missing} and run \`hollow upgrade\`, so each deploy is checked and rolled back if it fails.`,
     );
   }
+  if (deploy !== null) {
+    steps.push(
+      "Production deploys after the production environment's required reviewers approve (`hollow protect` sets them up). Where GitHub has none (private repos without Enterprise), a release waits instead, and running `gh workflow run release.yml -f version=<tag>` (or the Release workflow in the Actions tab) is the approval.",
+    );
+  }
   if (plan.release?.artifact.kind === "image" && plan.release.artifact.starter !== null) {
     steps.push(
       "Check the starter Dockerfile: build and run it once with `docker build -t app . && docker run --rm -p 8080:" +
