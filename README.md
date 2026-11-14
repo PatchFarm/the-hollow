@@ -1,6 +1,6 @@
 # The Hollow
 
-**Status: early development. Milestone M0 (foundation) is in: the CLI skeleton, project detection and the `hollow.yml` schema. It does not generate pipelines yet, and there is no npm release.**
+**Status: early development. The Hollow generates the CI half of the pipeline (build, quality, tests and security scanning) for Node/TypeScript and Python. Releases and deploys come next. There is no npm release yet.**
 
 The Hollow is an AI agent that sets up a complete, secure CI/CD pipeline for your project on GitHub Actions. It works out what your project needs, writes the pipeline, runs it, fixes it until it passes, and hands you the result as a pull request.
 
@@ -28,7 +28,20 @@ npm run build
 node dist/cli.js plan --cwd /path/to/your/project
 ```
 
-`hollow plan` is read-only. It shows what The Hollow detects in a project (language, package manager, runtime, frameworks, linters, tests, migrations, databases, containers and deploy config) with the file each finding came from, and validates `hollow.yml` if there is one. Add `--json` for machine-readable output.
+`hollow plan` is read-only. It shows what The Hollow detects in a project (language, package manager, runtime, frameworks, linters, tests, migrations, databases, containers and deploy config) with the file each finding came from, validates `hollow.yml` if there is one, and lists the CI steps it would generate. Add `--json` for machine-readable output.
+
+`hollow init` asks where the app deploys (suggesting what it detected), then writes three files:
+
+- `hollow.yml`, the config you own and edit
+- `.github/workflows/ci.yml`, which runs on every pull request and every push to your default branch:
+  - your project's own lint, format, type check, test and build steps, with a database service container when the app uses one
+  - Gitleaks (secrets), OSV-Scanner (dependencies), CodeQL on public repos or Semgrep on private ones, and Trivy when there is a Dockerfile
+  - one `CI passed` check to require in branch protection
+- `.github/dependabot.yml`, with weekly grouped updates held back 7 days after each release
+
+It never touches git and never overwrites a file it did not write (unless you pass `--force`), so you review the result with `git diff` and open the pull request yourself. Every action in the workflow is pinned to a commit SHA, every downloaded tool is checked against its published checksum, and each job gets only the permissions it needs.
+
+After you change `hollow.yml`, run `hollow upgrade` to regenerate the workflow. Both commands take `--dry-run`. If [actionlint](https://github.com/rhysd/actionlint) is installed, they check the workflow with it before writing anything.
 
 ## hollow.yml
 

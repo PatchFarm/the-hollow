@@ -1,0 +1,52 @@
+import type { PipelinePlan } from "../pipeline/plan.js";
+import { CI_WORKFLOW } from "./ci.js";
+import { renderGenerated } from "./render.js";
+
+export const DEPENDABOT_CONFIG = ".github/dependabot.yml";
+
+/**
+ * `.github/dependabot.yml`: weekly grouped updates for the app's dependencies, its GitHub
+ * Actions and its base image, each held back seven days after release (a supply-chain cooldown).
+ */
+export function renderDependabot(plan: PipelinePlan): string {
+  const updates: Record<string, unknown>[] = [];
+  const entry = (ecosystem: string, extra: Record<string, unknown> = {}) => ({
+    "package-ecosystem": ecosystem,
+    directory: "/",
+    schedule: { interval: "weekly" },
+    cooldown: { "default-days": 7 },
+    "open-pull-requests-limit": 5,
+    groups: { [ecosystem]: { patterns: ["*"], "update-types": ["minor", "patch"] } },
+    ...extra,
+  });
+
+  updates.push(entry(appEcosystem(plan)));
+  // The Hollow owns the pins in its own workflow; `hollow upgrade` updates them, so Dependabot
+  // leaves that file alone and still covers every other workflow.
+  updates.push(entry("github-actions", { "exclude-paths": [CI_WORKFLOW] }));
+  if (plan.dockerfile !== null) updates.push(entry("docker"));
+
+  return renderGenerated(
+    { version: 2, updates },
+    {
+      about: [
+        "Weekly grouped updates. Each release waits 7 days before Dependabot proposes it.",
+        `${CI_WORKFLOW} is excluded: its pins change through \`hollow upgrade\`.`,
+      ],
+    },
+  );
+}
+
+function appEcosystem(plan: PipelinePlan): string {
+  switch (plan.packageManager) {
+    case "bun":
+      return "bun";
+    case "uv":
+      return "uv";
+    case "pip":
+    case "poetry":
+      return "pip";
+    default:
+      return "npm";
+  }
+}
