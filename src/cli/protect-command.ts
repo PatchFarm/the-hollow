@@ -1,8 +1,10 @@
+import { MIGRATION_CHECK } from "../generate/migrations.js";
 import { currentRepo, type GitHubApi, GitHubError, ghApi } from "../github/api.js";
 import {
   applyProtection,
   type ProtectPlan,
   planProtection,
+  REQUIRED_CHECKS,
   type Step,
   type StepOutcome,
 } from "../protect/plan.js";
@@ -56,6 +58,7 @@ export async function protect(options: ProtectOptions): Promise<number> {
       preventSelfReview: settings.environments.production.preventSelfReview,
       preprod: settings.environments.preprod.enabled,
       releaseTokenSecret: plan.release === null ? null : plan.release.tokenSecret,
+      requiredChecks: [...REQUIRED_CHECKS, ...(plan.migrations === null ? [] : [MIGRATION_CHECK])],
     });
   } catch (error) {
     if (error instanceof GitHubError) {

@@ -70,6 +70,21 @@ export function checkout(options: { fetchDepth?: number; ref?: string } = {}): S
 function buildJob(plan: PipelinePlan): Job {
   const steps: Step[] = [checkout(), ...setupSteps(plan)];
   steps.push({ name: "Install dependencies", run: lines(plan.install) });
+  const migrations = plan.migrations;
+  if (migrations?.appliesInCi) {
+    // Proves every migration applies cleanly to an empty database before anything merges.
+    steps.push({
+      name: `Apply the ${migrations.tool} migrations to the CI database`,
+      ...(Object.keys(migrations.ciEnv).length > 0 ? { env: { ...migrations.ciEnv } } : {}),
+      run: migrations.apply,
+    });
+    if (migrations.missingCheck !== null) {
+      steps.push({
+        name: "Check that every model change has a migration",
+        run: migrations.missingCheck,
+      });
+    }
+  }
   for (const check of plan.checks) steps.push({ name: check.name, run: check.run });
 
   const job: Job = {

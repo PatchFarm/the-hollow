@@ -19,6 +19,7 @@ import {
   planDeploy,
   planStarter,
 } from "./deploy.js";
+import { type MigrationPlan, planMigrations } from "./migrations.js";
 
 /**
  * The typed pipeline model: what CI runs for this project, worked out from detection plus the
@@ -45,6 +46,8 @@ export interface PipelinePlan {
   release: ReleasePlan | null;
   /** How the release artifact reaches each environment. Null until a target M3 covers is chosen. */
   deploy: DeployPlan | null;
+  /** How migrations are applied and checked, or null when the project has none. */
+  migrations: MigrationPlan | null;
   /** Another git hook manager the project already uses (Husky, Lefthook), or null. */
   existingHooks: string | null;
   /** Things the developer should know before merging the generated pipeline. */
@@ -161,6 +164,7 @@ export function planPipeline(detection: Detection, config: HollowConfig | null):
     existingHooks,
     release: null,
     deploy: null,
+    migrations: null,
     security: {
       failOn: config?.security.failOn ?? "high",
       sast: config?.security.sast ?? "auto",
@@ -209,6 +213,15 @@ export function planPipeline(detection: Detection, config: HollowConfig | null):
           outputDir: archive?.outputDir ?? null,
           build: archive?.build ?? null,
         });
+  const migrations = planMigrations({
+    detection,
+    files,
+    config,
+    language,
+    packageManager,
+    serviceEngines: base.services.map((service) => service.engine),
+    notes,
+  });
   return {
     status: "ok",
     plan: {
@@ -217,6 +230,7 @@ export function planPipeline(detection: Detection, config: HollowConfig | null):
       dockerfile: image?.dockerfile ?? base.dockerfile,
       release,
       deploy,
+      migrations,
     },
   };
 }

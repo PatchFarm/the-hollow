@@ -175,6 +175,7 @@ describe("generated Dependabot config", () => {
       ".github/workflows/ci.yml",
       ".github/workflows/release.yml",
       ".github/workflows/preview.yml",
+      ".github/workflows/migrations.yml",
     ]);
   });
 

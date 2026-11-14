@@ -1,5 +1,6 @@
 import type { PipelinePlan } from "../pipeline/plan.js";
 import { CI_WORKFLOW } from "./ci.js";
+import { MIGRATIONS_WORKFLOW } from "./migrations.js";
 import { RELEASE_WORKFLOW } from "./release.js";
 import { renderGenerated } from "./render.js";
 import { PREVIEW_WORKFLOW } from "./vercel.js";
@@ -37,6 +38,7 @@ export function renderDependabot(plan: PipelinePlan): string {
         CI_WORKFLOW,
         ...(plan.release === null ? [] : [RELEASE_WORKFLOW]),
         ...(plan.deploy?.previews ? [PREVIEW_WORKFLOW] : []),
+        ...(plan.migrations !== null ? [MIGRATIONS_WORKFLOW] : []),
       ],
     }),
   );

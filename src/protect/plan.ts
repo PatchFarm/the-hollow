@@ -4,7 +4,7 @@ import { type ApiResponse, errorMessage, type GitHubApi, type Method } from "../
 export const RULESET_NAME = "The Hollow";
 /** GitHub Actions' app id: required checks must come from Actions, so no other app can fake them. */
 export const GITHUB_ACTIONS_APP_ID = 15368;
-/** Job names from the generated ci.yml and pr-title.yml. */
+/** Job names from the generated ci.yml and pr-title.yml, required on every project. */
 export const REQUIRED_CHECKS = ["CI passed", "Conventional Commit title"] as const;
 
 /**
@@ -26,6 +26,8 @@ export interface ProtectInput {
   preprod: boolean;
   /** Secret release-please reads, or null when release.yml is not generated. */
   releaseTokenSecret: string | null;
+  /** Checks to require; REQUIRED_CHECKS plus any the project's workflows add. */
+  requiredChecks?: string[];
 }
 
 export interface Step {
@@ -46,6 +48,17 @@ export interface ProtectPlan {
   tier: Tier;
   steps: Step[];
   notes: string[];
+}
+
+function checksFor(input: ProtectInput): string[] {
+  return input.requiredChecks ?? [...REQUIRED_CHECKS];
+}
+
+function listChecks(checks: string[]): string {
+  const quoted = checks.map((check) => `"${check}"`);
+  return quoted.length <= 2
+    ? quoted.join(" and ")
+    : `${quoted.slice(0, -1).join(", ")} and ${quoted.at(-1)}`;
 }
 
 export type PlanResult = { status: "ok"; plan: ProtectPlan } | { status: "error"; error: string };
@@ -316,7 +329,7 @@ function desiredRules(input: ProtectInput): Json[] {
       parameters: {
         strict_required_status_checks_policy: false,
         do_not_enforce_on_create: false,
-        required_status_checks: REQUIRED_CHECKS.map((context) => ({
+        required_status_checks: checksFor(input).map((context) => ({
           context,
           integration_id: GITHUB_ACTIONS_APP_ID,
         })),
@@ -413,7 +426,7 @@ async function rulesetStep(
   const changes = [
     ...(current === undefined ? [] : [`Update the existing "${RULESET_NAME}" ruleset to match:`]),
     `Changes to ${branch} only through pull requests, with ${approvals} required approval${approvals === 1 ? "" : "s"}${approvals === 0 ? " (raise it with protection.requiredApprovals in hollow.yml)" : ", reset when new commits are pushed"}`,
-    `Required checks: ${REQUIRED_CHECKS.map((check) => `"${check}"`).join(" and ")}, accepted only from GitHub Actions`,
+    `Required checks: ${listChecks(checksFor(input))}, accepted only from GitHub Actions`,
     `Review conversations resolved before merging, squash merges only, no force pushes or deleting ${branch}, and no one can bypass these rules`,
   ];
   return {
@@ -439,7 +452,10 @@ async function hasClassicProtection(api: GitHubApi, input: ProtectInput): Promis
 
 async function missingWorkflows(api: GitHubApi, input: ProtectInput): Promise<string[]> {
   const missing: string[] = [];
-  for (const file of [".github/workflows/ci.yml", ".github/workflows/pr-title.yml"]) {
+  const workflows = [".github/workflows/ci.yml", ".github/workflows/pr-title.yml"];
+  if (checksFor(input).includes("Migration safety"))
+    workflows.push(".github/workflows/migrations.yml");
+  for (const file of workflows) {
     const response = await api.request(
       "GET",
       `repos/${input.repo}/contents/${file}?ref=${encodeURIComponent(input.defaultBranch)}`,

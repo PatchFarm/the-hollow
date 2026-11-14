@@ -49,6 +49,8 @@ jobs:
         run: |
           npm ci
           npm exec --no -- prisma generate
+      - name: Apply the prisma migrations to the CI database
+        run: npm exec --no -- prisma migrate deploy
       - name: Lint
         run: npm run lint
       - name: Type check
