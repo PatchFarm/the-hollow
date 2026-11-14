@@ -4,11 +4,13 @@ import { loadConfig } from "../config/load.js";
 import { detectProject } from "../detect/index.js";
 import { isRepoName } from "../github/api.js";
 import { planPipeline } from "../pipeline/plan.js";
+import { ghWriter, type HostKeyTools, systemHostKeyTools, type Writer } from "../secrets/github.js";
 import { CHECK_IDS, type CheckStepId, check } from "./check-command.js";
 import { formatPlan } from "./format.js";
 import { init, upgrade } from "./generate-command.js";
 import type { Ask } from "./interview.js";
 import { type Connect, ghConnect, protect } from "./protect-command.js";
+import { secrets } from "./secrets-command.js";
 
 export interface Io {
   stdout: (text: string) => void;
@@ -16,13 +18,18 @@ export interface Io {
   cwd: string;
   /** Prompt the person at the keyboard. Absent when input is not a terminal. */
   ask?: Ask;
-  /** How `hollow protect` reaches GitHub. Defaults to the gh CLI; tests pass a fake. */
+  /** Prompt without echoing what is typed, for secret values. Absent when not a terminal. */
+  askSecret?: Ask;
+  /** Read everything piped to stdin. Present only when stdin is not a terminal. */
+  readStdin?: () => Promise<string>;
+  /** How `hollow protect` and `hollow secrets` reach GitHub. Defaults to gh; tests pass fakes. */
   connect?: Connect;
+  secretsWriter?: (cwd: string) => Writer;
+  hostKeys?: HostKeyTools;
 }
 
 /** Commands from docs/SCOPE.md that are planned but not built yet, with the milestone that ships them. */
 const PLANNED: Record<string, { milestone: string; summary: string }> = {
-  secrets: { milestone: "M3", summary: "List and set the secrets each environment needs" },
   fix: { milestone: "M5", summary: "Repair the latest failed pipeline run" },
   doctor: {
     milestone: "M6",
@@ -41,6 +48,8 @@ Commands:
   upgrade     Regenerate the files The Hollow owns from hollow.yml
   check       Run the CI checks on this machine, using the dependencies already installed
   protect     Apply branch rules, environments and security settings on GitHub (asks first)
+  secrets     List the secrets and variables the pipeline needs, set or missing, and set them
+              (\`hollow secrets set NAME [--env ENV]\` sets one, reading the value from stdin)
 ${Object.entries(PLANNED)
   .map(
     ([name, { milestone, summary }]) => `  ${name.padEnd(10)}  ${summary} (coming in ${milestone})`,
@@ -55,7 +64,8 @@ Options:
   --target <name>    Deploy target: vercel, cloudflare-workers, cloudflare-pages, docker, vps (init)
   --yes              Accept every suggested answer without asking (init), or apply without
                      confirming (protect)
-  --repo <owner/name>  GitHub repo to change, if not the one this folder's git remote points at (protect)
+  --repo <owner/name>  GitHub repo to use, if not the one this folder's git remote points at (protect, secrets)
+  --env <name>       Environment a value belongs to (secrets set)
   --install          Run the locked install CI uses before checking (check)
   --only <ids>       Run only some checks, comma-separated: ${CHECK_IDS.join(", ")} (check)
   --no-ai            Never call a model. This release makes no AI calls, so it is the default.
@@ -71,6 +81,7 @@ const COMMAND_OPTIONS: Record<string, readonly string[]> = {
   upgrade: ["dry-run", "force"],
   check: ["install", "only"],
   protect: ["dry-run", "yes", "repo"],
+  secrets: ["repo", "env"],
 };
 const GLOBAL_OPTIONS = ["cwd", "help", "version", "no-ai"];
 
@@ -93,8 +104,17 @@ export async function run(argv: readonly string[], io: Io): Promise<number> {
     io.stdout(HELP);
     return EXIT.ok;
   }
-  if (extra.length > 0) {
-    io.stderr(`Unexpected argument: ${extra[0]}\n`);
+  const secretsSet = command === "secrets" && extra[0] === "set" && extra.length === 2;
+  if (extra.length > 0 && !secretsSet) {
+    io.stderr(
+      command === "secrets" && extra[0] === "set"
+        ? "Usage: hollow secrets set NAME [--env ENV]\n"
+        : `Unexpected argument: ${extra[0]}\n`,
+    );
+    return EXIT.usage;
+  }
+  if (values.env !== undefined && !secretsSet) {
+    io.stderr("--env only applies to `hollow secrets set`.\n");
     return EXIT.usage;
   }
 
@@ -155,6 +175,23 @@ export async function run(argv: readonly string[], io: Io): Promise<number> {
         connect: io.connect ?? ghConnect,
         ...output,
       });
+    case "secrets":
+      if (values.repo !== undefined && !isRepoName(values.repo)) {
+        io.stderr("--repo takes a GitHub repo as owner/name.\n");
+        return EXIT.usage;
+      }
+      return secrets({
+        dir,
+        repo: values.repo,
+        set: secretsSet ? { name: extra[1] as string, environment: values.env } : undefined,
+        ask: io.ask,
+        askSecret: io.askSecret,
+        readStdin: io.readStdin,
+        connect: io.connect ?? ghConnect,
+        writer: io.secretsWriter ?? ghWriter,
+        hostKeys: io.hostKeys ?? systemHostKeyTools,
+        ...output,
+      });
     case "upgrade":
       return upgrade({
         dir,
@@ -190,6 +227,7 @@ function parse(argv: readonly string[]) {
       install: { type: "boolean" },
       only: { type: "string" },
       repo: { type: "string" },
+      env: { type: "string" },
       "no-ai": { type: "boolean" },
       help: { type: "boolean", short: "h" },
       version: { type: "boolean", short: "v" },

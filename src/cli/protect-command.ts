@@ -1,7 +1,4 @@
-import { CONFIG_FILE, loadConfig } from "../config/load.js";
-import { detectProject } from "../detect/index.js";
 import { currentRepo, type GitHubApi, GitHubError, ghApi } from "../github/api.js";
-import { planPipeline } from "../pipeline/plan.js";
 import {
   applyProtection,
   type ProtectPlan,
@@ -10,6 +7,7 @@ import {
   type StepOutcome,
 } from "../protect/plan.js";
 import type { Ask } from "./interview.js";
+import { loadPlan } from "./load-plan.js";
 
 /** Find the repo and a way to talk to GitHub. Throws GitHubError when gh cannot be used. */
 export type Connect = (
@@ -39,31 +37,10 @@ export interface ProtectOptions {
  * yes (or --yes).
  */
 export async function protect(options: ProtectOptions): Promise<number> {
-  let detection: ReturnType<typeof detectProject>;
-  try {
-    detection = detectProject(options.dir);
-  } catch (error) {
-    options.stderr(`${(error as Error).message}\n`);
-    return 1;
-  }
-  const config = loadConfig(detection.root);
-  if (config.status === "missing") {
-    options.stderr(`No ${CONFIG_FILE} here. Run \`hollow init\` first.\n`);
-    return 1;
-  }
-  if (config.status === "invalid") {
-    options.stderr(
-      `${CONFIG_FILE} is invalid:\n${config.errors.map((e) => `  - ${e}`).join("\n")}\n`,
-    );
-    return 1;
-  }
-  const pipeline = planPipeline(detection, config.config);
-  if (pipeline.status === "error") {
-    options.stderr(`${pipeline.error}\n`);
-    return 1;
-  }
-  const { plan } = pipeline;
-  const settings = config.config;
+  const loaded = loadPlan(options.dir, options.stderr);
+  if (loaded === null) return 1;
+  const { detection, plan } = loaded;
+  const settings = loaded.config;
 
   let result: Awaited<ReturnType<typeof planProtection>>;
   let repo: string;

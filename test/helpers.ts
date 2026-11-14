@@ -2,7 +2,7 @@ import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach } from "vitest";
-import { run } from "../src/cli/main.js";
+import { type Io, run } from "../src/cli/main.js";
 import type { Connect } from "../src/cli/protect-command.js";
 
 export const fixture = (name: string) => path.join(import.meta.dirname, "fixtures", name);
@@ -44,7 +44,7 @@ export interface CliResult {
 /** Run the CLI in-process. Pass `answers` to simulate a person typing at the prompts. */
 export async function runCli(
   args: string[],
-  options: { cwd?: string; answers?: string[]; connect?: Connect } = {},
+  options: { cwd?: string; answers?: string[]; connect?: Connect; io?: Partial<Io> } = {},
 ): Promise<CliResult> {
   let stdout = "";
   let stderr = "";
@@ -65,7 +65,13 @@ export async function runCli(
             stdout += question;
             return answers.shift() ?? "";
           },
+          // Same queue, but like the real hidden prompt, the answer is never shown.
+          askSecret: async (question: string) => {
+            stdout += question;
+            return answers.shift() ?? "";
+          },
         }),
+    ...options.io,
   });
   return { code, stdout, stderr };
 }
