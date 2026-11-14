@@ -79,6 +79,7 @@ describe("hollow secrets", () => {
     expect(result.stdout).not.toContain("(not read)");
     // No terminal: list, show how to set from a script, and fail while something is missing.
     expect(result.stdout).toContain("npx the-hollow secrets set VPS_SSH_KEY --env production");
+    expect(result.stdout).toContain("npx the-hollow secrets set RELEASE_PLEASE_TOKEN   # optional");
     expect(result.stdout).toContain("1 required value is still missing: VPS_SSH_KEY (production).");
     expect(result.code).toBe(EXIT.failure);
     expect(t.written).toEqual([]);

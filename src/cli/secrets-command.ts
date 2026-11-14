@@ -66,7 +66,9 @@ export async function secrets(options: SecretsOptions): Promise<number> {
 
     if (options.ask === undefined) {
       options.stdout("\nTo set the missing ones from a script, pipe each value in:\n");
-      for (const setting of missing) options.stdout(`  ${setCommand(setting)}\n`);
+      for (const setting of missing) {
+        options.stdout(`  ${setCommand(setting)}${setting.required ? "" : "   # optional"}\n`);
+      }
       return finish(settings, status, options);
     }
     const answer = await options.ask(`\nSet the missing ones now? [y/N] `);
