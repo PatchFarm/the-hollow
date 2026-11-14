@@ -38,6 +38,11 @@ export interface FakeState {
   reporting: boolean;
   classicProtection: boolean;
   files: string[];
+  /** Names only: the fake, like GitHub, never hands out secret values. */
+  repoSecrets: string[];
+  repoVariables: string[];
+  envSecrets: Record<string, string[]>;
+  envVariables: Record<string, string[]>;
   /** Force a response for `METHOD path` (path without the query string). */
   refuse: Record<string, { status: number; message: string }>;
 }
@@ -82,6 +87,10 @@ export function fakeState(overrides: Partial<FakeState> = {}): FakeState {
     reporting: false,
     classicProtection: false,
     files: [".github/workflows/ci.yml", ".github/workflows/pr-title.yml"],
+    repoSecrets: [],
+    repoVariables: [],
+    envSecrets: {},
+    envVariables: {},
     refuse: {},
     ...overrides,
   };
@@ -252,6 +261,28 @@ export class FakeGitHub implements GitHubApi {
       return json({ name });
     }
 
+    if (method === "GET" && rest === "/actions/secrets") {
+      return json({
+        total_count: s.repoSecrets.length,
+        secrets: s.repoSecrets.map((name) => ({ name })),
+      });
+    }
+    if (method === "GET" && rest === "/actions/variables") {
+      return json({
+        total_count: s.repoVariables.length,
+        variables: s.repoVariables.map((name) => ({ name, value: "(not read)" })),
+      });
+    }
+    const scoped = /^\/environments\/([^/]+)\/(secrets|variables)$/.exec(rest);
+    if (method === "GET" && scoped) {
+      const name = scoped[1] as string;
+      if (s.environments[name] === undefined) return notFound;
+      const list = (scoped[2] === "secrets" ? s.envSecrets : s.envVariables)[name] ?? [];
+      return json({
+        total_count: list.length,
+        [scoped[2] as string]: list.map((n) => ({ name: n })),
+      });
+    }
     if (rest === "/actions/permissions/workflow") {
       if (method === "GET") return json(s.workflow);
       Object.assign(s.workflow, body);

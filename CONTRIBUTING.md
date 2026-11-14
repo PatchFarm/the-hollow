@@ -26,6 +26,7 @@ CI runs all of these on Node 22 and 24 for every pull request.
 - `src/generate/release.ts`, `vercel.ts` and `cloudflare.ts`: the release and deploy workflows. Image targets (Docker, VPS) live in `release.ts`; each hosting platform has its own file, and `vercel.ts` also holds the preview workflow every target with previews shares
 - `src/cli/check-command.ts`: `hollow check`, which runs the model's checks locally through `src/util/exec.ts`
 - `src/cli/protect-command.ts` and `src/protect/plan.ts`: `hollow protect`. Planning only reads; every change sits in a step's `apply` until the developer confirms
+- `src/cli/secrets-command.ts` and `src/secrets/`: `hollow secrets`. `catalog.ts` lists what each target reads; `github.ts` reads names (never values) and writes values through gh on stdin
 - `src/github/api.ts`: the only way to talk to GitHub, through `gh api` and the developer's own login. Tests use the in-memory fake in `test/fake-github.ts` and never call GitHub
 - `src/util/project-files.ts` and `src/util/project-writer.ts`: the only way to read and write project files. They refuse paths and symlinks that leave the project root, so use them instead of `fs`
 - `test/fixtures/`: sample projects (see its README)

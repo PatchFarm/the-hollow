@@ -1,4 +1,4 @@
-import { chmodSync } from "node:fs";
+import { chmodSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -9,6 +9,7 @@ import {
   isRepoName,
   parseIncluded,
 } from "../src/github/api.js";
+import { ghWriter } from "../src/secrets/github.js";
 import { tempProject } from "./helpers.js";
 
 const originalPath = process.env.PATH;
@@ -113,5 +114,41 @@ exit 1`);
     expect(isRepoName("PatchFarm/the-hollow")).toBe(true);
     expect(isRepoName("a/b/c")).toBe(false);
     expect(isRepoName("../x")).toBe(false);
+  });
+});
+
+describe("ghWriter", () => {
+  it("passes the value on stdin, never in the arguments", async () => {
+    const dir = fakeGh(`cat > "$(dirname "$0")/stdin.txt"
+echo "$*" > "$(dirname "$0")/args.txt"`);
+    const setting = {
+      name: "VPS_SSH_KEY",
+      kind: "secret" as const,
+      environment: "staging",
+      required: true,
+      purpose: "",
+      input: "file" as const,
+    };
+    await ghWriter(process.cwd())("octocat/demo", setting, "secret-value\n");
+    expect(readFileSync(path.join(dir, "args.txt"), "utf8").trim()).toBe(
+      "secret set VPS_SSH_KEY --repo octocat/demo --env staging",
+    );
+    expect(readFileSync(path.join(dir, "stdin.txt"), "utf8")).toBe("secret-value\n");
+  });
+
+  it("uses gh variable set for variables, and reports gh's error", async () => {
+    fakeGh(`echo "HTTP 404: Not Found" >&2
+exit 1`);
+    const setting = {
+      name: "VERCEL_ORG_ID",
+      kind: "variable" as const,
+      environment: null,
+      required: true,
+      purpose: "",
+      input: "visible" as const,
+    };
+    await expect(ghWriter(process.cwd())("octocat/demo", setting, "team_1")).rejects.toThrow(
+      "HTTP 404: Not Found",
+    );
   });
 });

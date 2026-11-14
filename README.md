@@ -69,6 +69,8 @@ Once the workflows are merged, `hollow protect` sets up the repo on GitHub throu
 
 It needs admin access to the repo. It only adds or tightens settings, and leaves other rulesets and branch policies alone (it points them out). Some of this depends on your GitHub plan: private repos get deploy approvals only on GitHub Enterprise, and private repos on GitHub Free get no branch rules or environments at all. `hollow protect` applies what your plan allows and says what it could not. Run it again any time: when nothing has drifted, it changes nothing.
 
+`hollow secrets` lists every secret and variable the generated workflows read, per environment, marked set or missing. It reads names only: GitHub never returns secret values, and The Hollow does not read variable values. In a terminal it then offers to set the missing ones: secret values are typed without being shown, SSH keys are read from a file you point to, and for a VPS host key it runs `ssh-keyscan`, shows the fingerprints and saves them only once you confirm they match your server. Values go straight to `gh secret set` / `gh variable set` on stdin and are never printed or written to disk. For scripts, `hollow secrets set NAME [--env ENV]` reads one value from stdin, and `hollow secrets` exits non-zero while anything required is missing.
+
 ## hollow.yml
 
 `hollow.yml` is the source of truth for your pipeline. A minimal one:
