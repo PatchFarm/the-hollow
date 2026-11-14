@@ -103,6 +103,13 @@ export const NPM_TOOLS = {
     sha512:
       "b913a31fe06964fd7c0d74ebba197825356f65b4593c81bcf6014df3167957ae962caebad1073edeb213013206f36ff2ac49b77771a96066af212739da4067ff",
   },
+  /** Used only when the project does not have its own wrangler in package.json. */
+  wrangler: {
+    version: "4.156.0",
+    url: "https://registry.npmjs.org/wrangler/-/wrangler-4.156.0.tgz",
+    sha512:
+      "9152c04a1b8b88d804de372b9977329837ff88f2833eb4b10027b9b9eba05bfdf71de341f44f4290a61c86e742781c209ac9e5e24fb5cede0d3bbbea6ff7d1b9",
+  },
 } as const;
 
 export const IMAGES = {

@@ -336,6 +336,23 @@ function productionJob(vercel: VercelPlan, environment: DeployEnvironment, previ
  * as are Dependabot's (Dependabot runs get no Actions secrets).
  */
 export function renderPreviewWorkflow(plan: PipelinePlan, vercel: VercelPlan): string {
+  return renderPreview(
+    plan,
+    [
+      installVercel(),
+      pullSettings(vercel, "preview"),
+      { name: "Build with preview settings", env: projectEnv(vercel), run: "vercel build" },
+      deployStep(vercel, "", "Preview deployment:"),
+    ],
+    "A Vercel Preview deploy for each pull request from a branch in this repo, using Preview's environment variables.",
+  );
+}
+
+/**
+ * The preview workflow shared by every target that has previews: the target's deploy steps
+ * (which must leave the URL in `steps.deploy.outputs.url`), then one PR comment with the URL.
+ */
+export function renderPreview(plan: PipelinePlan, deploySteps: Step[], about: string): string {
   const marker = "<!-- hollow-preview -->";
   const job: Job = {
     name: "Preview deploy",
@@ -348,10 +365,7 @@ export function renderPreviewWorkflow(plan: PipelinePlan, vercel: VercelPlan): s
     steps: [
       checkout(),
       ...setupSteps(plan),
-      installVercel(),
-      pullSettings(vercel, "preview"),
-      { name: "Build with preview settings", env: projectEnv(vercel), run: "vercel build" },
-      deployStep(vercel, "", "Preview deployment:"),
+      ...deploySteps,
       {
         name: "Post the preview URL on the pull request",
         env: {
@@ -385,9 +399,7 @@ export function renderPreviewWorkflow(plan: PipelinePlan, vercel: VercelPlan): s
       jobs: { preview: job },
     },
     {
-      about: [
-        "A Vercel Preview deploy for each pull request from a branch in this repo, using Preview's environment variables.",
-      ],
+      about: [about],
       comments: { concurrency: "A new push replaces the preview that was still building." },
     },
   );

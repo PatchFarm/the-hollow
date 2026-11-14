@@ -196,10 +196,19 @@ export function planPipeline(detection: Detection, config: HollowConfig | null):
         });
   const image = release?.artifact.kind === "image" ? release.artifact : null;
   const imageTarget = config?.deploy.target === "docker" || config?.deploy.target === "vps";
+  const archive = release?.artifact.kind === "archive" ? release.artifact : null;
   const deploy =
     config === null || (imageTarget && image === null)
       ? null
-      : planDeploy(config, appPort, files, notes);
+      : planDeploy({
+          config,
+          appPort,
+          files,
+          notes,
+          packageManager,
+          outputDir: archive?.outputDir ?? null,
+          build: archive?.build ?? null,
+        });
   return {
     status: "ok",
     plan: {

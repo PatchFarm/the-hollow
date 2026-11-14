@@ -42,18 +42,32 @@ export interface VercelPlan {
   writeConfig: boolean;
 }
 
+export interface CloudflarePlan {
+  kind: "workers" | "pages";
+  tokenSecret: string;
+  accountIdVariable: string;
+  /** How to run wrangler: the project's own (locked by its lockfile) or the pinned one. */
+  wrangler: string;
+  pinnedWrangler: boolean;
+  /** Pages only. */
+  projectName: string | null;
+  outputDir: string | null;
+  build: string | null;
+}
+
 /**
  * How one build is promoted through the environments. Null for targets M3 has not reached yet.
  * Docker and VPS promote an image digest; Vercel promotes a staged production deployment.
  */
 export interface DeployPlan {
-  target: "docker" | "vps" | "vercel";
+  target: "docker" | "vps" | "vercel" | "cloudflare-workers" | "cloudflare-pages";
   environments: DeployEnvironment[];
   /** Port the app listens on inside the container. */
   appPort: number;
   healthPath: string;
   vps: VpsPlan | null;
   vercel: VercelPlan | null;
+  cloudflare: CloudflarePlan | null;
   /** Workflow for per-PR preview deploys, for targets that have them. */
   previews: boolean;
 }
@@ -80,14 +94,24 @@ export interface ContainerStarter {
 export const DEPLOY_COMPOSE = "deploy/compose.yaml";
 export const DEFAULT_APP_PORT: Record<Language, number> = { node: 3000, python: 8000 };
 
-export function planDeploy(
-  config: HollowConfig,
-  appPort: number,
-  files: ProjectFiles,
-  notes: string[],
-): DeployPlan | null {
+export interface DeployInput {
+  config: HollowConfig;
+  appPort: number;
+  files: ProjectFiles;
+  notes: string[];
+  packageManager: PackageManager;
+  /** The release archive's build output and command, for Pages. */
+  outputDir: string | null;
+  build: string | null;
+}
+
+export function planDeploy(input: DeployInput): DeployPlan | null {
+  const { config, appPort, files, notes } = input;
   const { deploy, environments, verify } = config;
-  if (deploy.target !== "docker" && deploy.target !== "vps" && deploy.target !== "vercel") {
+  if (deploy.target === "cloudflare-pages" && (input.outputDir === null || input.build === null)) {
+    notes.push(
+      "Cloudflare Pages deploys need a build command and its output folder. Set release.outputDir in hollow.yml (or pages_build_output_dir in wrangler.toml) and run `hollow upgrade`.",
+    );
     return null;
   }
   const health = (url: string | undefined) =>
@@ -108,6 +132,10 @@ export function planDeploy(
     if (deploy.target === "vercel" && environments.preprod.url === undefined) {
       notes.push(
         "On Vercel, preprod points a domain at the release before production does, so it needs environments.preprod.url (a domain on your Vercel project). Without one, releases go from staging straight to production.",
+      );
+    } else if (deploy.target === "cloudflare-workers") {
+      notes.push(
+        "Workers have no preprod step: the staging Version URL already runs the exact version a release deploys. Releases go from staging straight to production.",
       );
     } else {
       list.push(environment("preprod", environments.preprod.url, 2));
@@ -140,8 +168,48 @@ export function planDeploy(
             writeConfig: vercelConfig(files, notes),
           }
         : null,
-    previews: deploy.target === "vercel",
+    cloudflare:
+      deploy.target === "cloudflare-workers" || deploy.target === "cloudflare-pages"
+        ? {
+            kind: deploy.target === "cloudflare-workers" ? "workers" : "pages",
+            tokenSecret: deploy.tokenSecret,
+            accountIdVariable: deploy.accountIdVariable,
+            ...wrangler(files, input.packageManager),
+            projectName: deploy.target === "cloudflare-pages" ? deploy.projectName : null,
+            outputDir: deploy.target === "cloudflare-pages" ? input.outputDir : null,
+            build: deploy.target === "cloudflare-pages" ? input.build : null,
+          }
+        : null,
+    previews: deploy.target === "vercel" || deploy.target === "cloudflare-pages",
   };
+}
+
+/** The project's own wrangler when package.json lists it, so its lockfile decides the version. */
+function wrangler(
+  files: ProjectFiles,
+  pm: PackageManager,
+): { wrangler: string; pinnedWrangler: boolean } {
+  let listed = false;
+  try {
+    const manifest: unknown = JSON.parse(files.readText("package.json") ?? "{}");
+    if (isRecord(manifest)) {
+      listed = [manifest.dependencies, manifest.devDependencies].some(
+        (deps) => isRecord(deps) && typeof deps.wrangler === "string",
+      );
+    }
+  } catch {
+    listed = false;
+  }
+  if (!listed) return { wrangler: "wrangler", pinnedWrangler: true };
+  // Yarn classic prints a banner on stdout, which would break wrangler's --json output, so Yarn
+  // projects run the installed binary through npm exec, which prints nothing extra.
+  const run: Record<string, string> = {
+    npm: "npm exec --no -- wrangler",
+    pnpm: "pnpm exec wrangler",
+    yarn: "npm exec --no -- wrangler",
+    bun: "bun run wrangler",
+  };
+  return { wrangler: run[pm] ?? "npm exec --no -- wrangler", pinnedWrangler: false };
 }
 
 /**

@@ -6,6 +6,7 @@ import type {
   ReleasePlan,
 } from "../pipeline/plan.js";
 import { checkout, installBinary, lines, setupSteps } from "./ci.js";
+import { renderCloudflarePipeline } from "./cloudflare.js";
 import { ACTIONS, BINARIES } from "./pins.js";
 import { expr, renderGenerated } from "./render.js";
 import { renderVercelPipeline } from "./vercel.js";
@@ -25,6 +26,7 @@ export const RELEASE = "needs.release-please.outputs";
  */
 export function renderReleaseWorkflow(plan: PipelinePlan, release: ReleasePlan): string {
   if (plan.deploy?.vercel) return renderVercelPipeline(plan, release, plan.deploy);
+  if (plan.deploy?.cloudflare) return renderCloudflarePipeline(plan, release, plan.deploy);
   if (release.artifact.kind === "image" && plan.deploy !== null) {
     return renderImagePipeline(plan, release, release.artifact, plan.deploy);
   }

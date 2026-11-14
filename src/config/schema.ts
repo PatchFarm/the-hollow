@@ -97,14 +97,22 @@ const vercelTarget = z.strictObject({
   }),
 });
 
+const accountIdVariable = z
+  .string()
+  .regex(/^[A-Z][A-Z0-9_]*$/, "must be the NAME of a GitHub Actions variable (UPPER_SNAKE_CASE)")
+  .default("CLOUDFLARE_ACCOUNT_ID")
+  .meta({ description: "GitHub Actions variable holding the Cloudflare account ID." });
+
 const cloudflareWorkersTarget = z.strictObject({
   target: z.literal("cloudflare-workers"),
   tokenSecret: secretName.default("CLOUDFLARE_API_TOKEN"),
+  accountIdVariable,
 });
 
 const cloudflarePagesTarget = z.strictObject({
   target: z.literal("cloudflare-pages"),
   tokenSecret: secretName.default("CLOUDFLARE_API_TOKEN"),
+  accountIdVariable,
   projectName: z.string().regex(/^[a-z0-9][a-z0-9-]*$/, "must be a Cloudflare Pages project name"),
 });
 
