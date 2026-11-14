@@ -350,7 +350,7 @@ jobs:
           mkdir -p "$assets"
           gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir "$assets"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "version=$(echo "$tag" | sed 's/^v//')" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
           if ! ls "$assets"/*.tar.gz > /dev/null 2>&1; then
             echo "::error title=Release assets::$tag has no build archive, so there is nothing to deploy."
             exit 1

@@ -289,7 +289,7 @@ jobs:
           mkdir -p "$assets"
           gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir "$assets"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "version=$(echo "$tag" | sed 's/^v//')" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
           ref="$(cat "$assets/image-digest.txt" 2> /dev/null || true)"
           if ! echo "$ref" | grep -Eqx 'ghcr\.io/[a-z0-9._/-]+@sha256:[0-9a-f]{64}'; then
             echo "::error title=Release assets::$tag has no valid image-digest.txt, so there is nothing to deploy."

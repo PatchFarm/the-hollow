@@ -128,7 +128,7 @@ export function resolveRelease(asset: ReleaseAsset): Step {
       'mkdir -p "$assets"',
       'gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir "$assets"',
       'echo "tag=$tag" >> "$GITHUB_OUTPUT"',
-      'echo "version=$(echo "$tag" | sed \'s/^v//\')" >> "$GITHUB_OUTPUT"',
+      `echo "version=\${tag#v}" >> "$GITHUB_OUTPUT"`,
       ...CHECKS[asset],
       'echo "Deploying release $tag to production, approved by $GITHUB_ACTOR running this workflow." >> "$GITHUB_STEP_SUMMARY"',
     ]),

@@ -313,7 +313,7 @@ jobs:
           mkdir -p "$assets"
           gh release download "$tag" --repo "$GITHUB_REPOSITORY" --dir "$assets"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
-          echo "version=$(echo "$tag" | sed 's/^v//')" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
           id="$(cat "$assets/worker-version.txt" 2> /dev/null || true)"
           if ! echo "$id" | grep -Eqx '[A-Za-z0-9-]+'; then
             echo "::error title=Release assets::$tag has no valid worker-version.txt, so there is nothing to deploy."
