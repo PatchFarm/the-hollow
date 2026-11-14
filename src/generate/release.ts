@@ -7,6 +7,12 @@ import type {
 } from "../pipeline/plan.js";
 import { checkout, installBinary, lines, setupSteps } from "./ci.js";
 import { renderCloudflarePipeline } from "./cloudflare.js";
+import {
+  migrateFromRunner,
+  migratesFromRunner,
+  SCHEMA_STAYS,
+  vpsMigrationLines,
+} from "./deploy-migrations.js";
 import { addProductionGate, DISPATCH, FROM_RUN, type ReleaseSource } from "./gate.js";
 import { ACTIONS, BINARIES } from "./pins.js";
 import { expr, renderGenerated } from "./render.js";
@@ -278,7 +284,7 @@ function renderImagePipeline(
       continue;
     }
     const id = `deploy-${environment.name}`;
-    jobs[id] = deployJob(deploy, environment, previous);
+    jobs[id] = deployJob(plan, deploy, environment, previous);
     previous = id;
   }
   const last = previous;
@@ -293,7 +299,7 @@ function renderImagePipeline(
     permissions: {},
     jobs: addProductionGate(
       jobs,
-      (source) => deployJob(deploy, productionEnvironment, last, source),
+      (source) => deployJob(plan, deploy, productionEnvironment, last, source),
       "image",
     ),
   };
@@ -423,6 +429,7 @@ export const MANUAL_COMMENT =
   "A person with write access runs this workflow with a release version: that run is the approval, and it deploys the release's own artifact.";
 
 function deployJob(
+  plan: PipelinePlan,
   deploy: DeployPlan,
   environment: DeployEnvironment,
   previous: string | null,
@@ -444,21 +451,29 @@ function deployJob(
     concurrency: { group: `deploy-${environment.name}`, "cancel-in-progress": false },
   };
   if (deploy.vps === null) {
+    const migrate = migratesFromRunner(plan, environment.name);
     return {
       ...job,
-      permissions: { packages: "write" },
-      steps: registrySteps(environment, source),
+      permissions: migrate ? { contents: "read", packages: "write" } : { packages: "write" },
+      steps: [
+        ...(migrate ? migrateFromRunner(plan, environment.name, source) : []),
+        ...registrySteps(environment, source, migrate),
+      ],
     };
   }
   return {
     ...job,
     permissions: { contents: "read", packages: "read" },
-    steps: vpsSteps(deploy, environment, source),
+    steps: vpsSteps(plan, deploy, environment, source),
   };
 }
 
 /** Docker target: move the environment's tag (`:staging`, `:production`) to the new digest. */
-function registrySteps(environment: DeployEnvironment, source: ReleaseSource): Step[] {
+function registrySteps(
+  environment: DeployEnvironment,
+  source: ReleaseSource,
+  migrated: boolean,
+): Step[] {
   const env = { IMAGE: source.image, DIGEST: source.digest, TAG_NAME: environment.name };
   const steps: Step[] = [
     ghcrLogin(),
@@ -485,7 +500,7 @@ function registrySteps(environment: DeployEnvironment, source: ReleaseSource): S
         "  exit 0",
         "fi",
         'docker buildx imagetools create --tag "$IMAGE:$TAG_NAME" "$IMAGE@$PREVIOUS"',
-        'echo "::error title=Rolled back::$TAG_NAME is back on $IMAGE@$PREVIOUS."',
+        `echo "::error title=Rolled back::$TAG_NAME is back on $IMAGE@$PREVIOUS.${migrated ? ` ${SCHEMA_STAYS}` : ""}"`,
       ]),
     });
   }
@@ -548,6 +563,7 @@ const REMOTE_COMPOSE = [
 ];
 
 function vpsSteps(
+  plan: PipelinePlan,
   deploy: DeployPlan,
   environment: DeployEnvironment,
   source: ReleaseSource,
@@ -555,6 +571,8 @@ function vpsSteps(
   const vps = deploy.vps;
   if (vps === null) return [];
   const name = environment.name;
+  const migrate = plan.migrations === null ? [] : vpsMigrationLines(plan.migrations);
+  const migrated = migrate.length > 0;
   const server = {
     HOST: vps.host,
     SSH_USER: vps.user,
@@ -616,6 +634,7 @@ function vpsSteps(
         "if [ -f .hollow.env ]; then cp .hollow.env .hollow.env.previous; fi",
         'printf \'IMAGE=%s\\nAPP_PORT=%s\\n\' "$2" "$4" > .hollow.env',
         "compose pull --quiet",
+        ...migrate,
         "if compose up --detach --wait --wait-timeout 120; then",
         '  echo "The new version is up and healthy."',
         "  exit 0",
@@ -624,7 +643,7 @@ function vpsSteps(
         "if [ -f .hollow.env.previous ]; then",
         "  cp .hollow.env.previous .hollow.env",
         "  compose up --detach --wait --wait-timeout 120 || true",
-        '  echo "Rolled back to the previous version." >&2',
+        `  echo "Rolled back to the previous version.${migrated ? ` ${SCHEMA_STAYS}` : ""}" >&2`,
         "fi",
         "exit 1",
         "REMOTE",
@@ -651,7 +670,7 @@ function vpsSteps(
         "cp .hollow.env.previous .hollow.env",
         "compose up --detach --wait --wait-timeout 120",
         "REMOTE",
-        'echo "::error title=Rolled back::$ENVIRONMENT on $HOST is back on the previous version."',
+        `echo "::error title=Rolled back::$ENVIRONMENT on $HOST is back on the previous version.${migrated ? ` ${SCHEMA_STAYS}` : ""}"`,
       ]),
     });
   }

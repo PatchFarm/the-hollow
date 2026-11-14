@@ -18,9 +18,11 @@ import { RELEASE_WORKFLOW, renderReleaseWorkflow } from "./release.js";
 import {
   CODEOWNERS,
   EDITORCONFIG,
+  MIGRATIONS_GUIDE,
   PR_TEMPLATE,
   renderCodeowners,
   renderEditorconfig,
+  renderMigrationsGuide,
   renderPrTemplate,
 } from "./scaffold.js";
 import {
@@ -117,6 +119,12 @@ export function generateFiles(plan: PipelinePlan): GeneratedFile[] {
       path: MIGRATION_CHECKER,
       content: renderMigrationChecker(),
       kind: "generated",
+      workflow: false,
+    });
+    files.push({
+      path: MIGRATIONS_GUIDE,
+      content: renderMigrationsGuide(plan),
+      kind: "scaffold",
       workflow: false,
     });
   }

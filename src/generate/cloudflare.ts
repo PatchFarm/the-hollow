@@ -1,6 +1,7 @@
 import type { CloudflarePlan, DeployEnvironment, DeployPlan } from "../pipeline/deploy.js";
 import type { PipelinePlan, ReleasePlan } from "../pipeline/plan.js";
 import { checkout, installBinary, lines, setupSteps } from "./ci.js";
+import { migrateStep, migratesFromRunner, SCHEMA_STAYS } from "./deploy-migrations.js";
 import { addProductionGate, DISPATCH, FROM_RUN, type ReleaseSource, sourceEnv } from "./gate.js";
 import { ACTIONS, BINARIES, NPM_TOOLS } from "./pins.js";
 import {
@@ -88,6 +89,15 @@ export function renderCloudflarePipeline(
       },
     },
   );
+}
+
+/** These jobs have already checked out and installed, so migrating is one step. */
+function migrationFor(plan: PipelinePlan, environment: DeployEnvironment): Step[] {
+  return migratesFromRunner(plan, environment.name) ? [migrateStep(plan, environment.name)] : [];
+}
+
+function stays(plan: PipelinePlan, environment: DeployEnvironment): string {
+  return migratesFromRunner(plan, environment.name) ? ` ${SCHEMA_STAYS}` : "";
 }
 
 function cloudflareEnv(cf: CloudflarePlan): Record<string, string> {
@@ -268,6 +278,7 @@ function pagesStagingJob(
       ...prepare(plan, cf),
       { name: "Build", run: cf.build as string },
       ...attestAndKeep(cf.outputDir as string, "package"),
+      ...migrationFor(plan, staging),
       {
         name: "Deploy to the staging branch",
         id: "deploy",
@@ -357,6 +368,7 @@ function workersProductionJob(
         'echo "previous=$previous" >> "$GITHUB_OUTPUT"',
       ]),
     },
+    ...migrationFor(plan, environment),
     {
       name: "Send all traffic to the staged version",
       id: "promote",
@@ -386,7 +398,7 @@ function workersProductionJob(
         "  exit 0",
         "fi",
         `${cf.wrangler} versions deploy "$PREVIOUS@100%" --yes --message "Roll back $TAG"`,
-        'echo "::error title=Rolled back::Production is back on version $PREVIOUS."',
+        `echo "::error title=Rolled back::Production is back on version $PREVIOUS.${stays(plan, environment)}"`,
       ]),
     });
   }
@@ -434,6 +446,7 @@ function pagesReleaseJob(
     });
   }
   const branch = production ? plan.defaultBranch : environment.name;
+  steps.push(...migrationFor(plan, environment));
   steps.push({
     name: `Deploy the staged build to the ${branch} branch`,
     id: "promote",
@@ -464,7 +477,7 @@ function pagesReleaseJob(
         "  exit 0",
         "fi",
         `curl --fail --silent --show-error --request POST --header "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "${api}/deployments/$PREVIOUS/rollback" > /dev/null`,
-        'echo "::error title=Rolled back::Production is back on deployment $PREVIOUS."',
+        `echo "::error title=Rolled back::Production is back on deployment $PREVIOUS.${stays(plan, environment)}"`,
       ]),
     });
   }

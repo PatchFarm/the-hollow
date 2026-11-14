@@ -220,6 +220,7 @@ export function planPipeline(detection: Detection, config: HollowConfig | null):
     language,
     packageManager,
     serviceEngines: base.services.map((service) => service.engine),
+    deploy,
     notes,
   });
   return {

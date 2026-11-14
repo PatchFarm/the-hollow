@@ -114,6 +114,24 @@ export function settingsFor(plan: PipelinePlan): Setting[] {
       },
     );
   }
+  const migrations = plan.migrations?.deploy;
+  if (migrations?.where === "runner") {
+    for (const environment of migrations.environments) {
+      // Vercel's preprod serves the staged deployment, which runs with production's settings.
+      const shared = deploy?.vercel && environment !== "production";
+      settings.push({
+        name: migrations.secret,
+        kind: "secret",
+        environment,
+        required: true,
+        purpose: shared
+          ? `production's database URL: ${environment} runs with production's settings and migrates it first`
+          : `${environment}'s database URL, so its deploy applies migrations first`,
+        input: "hidden",
+        hint: "the connection string the app uses, for example postgresql://user:password@host:5432/app",
+      });
+    }
+  }
   if (plan.release !== null) {
     settings.push({
       name: plan.release.tokenSecret,

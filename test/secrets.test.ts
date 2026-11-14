@@ -88,7 +88,11 @@ describe("hollow secrets", () => {
   it("passes once everything required is set", async () => {
     const t = setup(
       VERCEL,
-      { repoSecrets: ["VERCEL_TOKEN"], repoVariables: ["VERCEL_ORG_ID", "VERCEL_PROJECT_ID"] },
+      {
+        repoSecrets: ["VERCEL_TOKEN"],
+        repoVariables: ["VERCEL_ORG_ID", "VERCEL_PROJECT_ID"],
+        envSecrets: { production: ["DATABASE_URL"] },
+      },
       "node-next-prisma",
     );
     const result = await runCli(["secrets", "--cwd", t.dir], {
@@ -103,12 +107,22 @@ describe("hollow secrets", () => {
     const t = setup(VERCEL, {}, "node-next-prisma");
     const result = await runCli(["secrets", "--cwd", t.dir], {
       connect: t.connect,
-      answers: ["y", "vercel-token-value", "team_123", "prj_456", "", ""],
+      // token, org, project, skip the bypass secret, production's database URL, skip release token
+      answers: [
+        "y",
+        "vercel-token-value",
+        "team_123",
+        "prj_456",
+        "",
+        "postgresql://u:pw@db/app",
+        "",
+      ],
       io: { secretsWriter: t.writer, hostKeys: t.hostKeys },
     });
     expect(result.stdout).toContain("Set the missing ones now? [y/N]");
     expect(result.stdout).toContain("Value, not shown (Enter to skip)");
     expect(result.stdout).not.toContain("vercel-token-value");
+    expect(result.stdout).not.toContain("postgresql://u:pw@db/app");
     expect(t.written).toEqual([
       {
         repo: "octocat/demo",
@@ -130,6 +144,13 @@ describe("hollow secrets", () => {
         kind: "variable",
         environment: null,
         value: "prj_456",
+      },
+      {
+        repo: "octocat/demo",
+        name: "DATABASE_URL",
+        kind: "secret",
+        environment: "production",
+        value: "postgresql://u:pw@db/app",
       },
     ]);
     expect(result.stdout).toContain("skipped  VERCEL_AUTOMATION_BYPASS_SECRET");
