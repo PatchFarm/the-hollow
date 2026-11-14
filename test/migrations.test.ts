@@ -272,7 +272,7 @@ describe("hollow protect and hollow plan", () => {
 
     const shown = await runCli(["plan", "--cwd", dir]);
     expect(shown.stdout).toContain(
-      'prisma: applied to the CI database on every run; destructive changes need the "allow-destructive-migration" label',
+      'prisma: applied to the CI database on every run, and to the production database before each deploy (DATABASE_URL secret); destructive changes need the "allow-destructive-migration" label',
     );
   });
 });

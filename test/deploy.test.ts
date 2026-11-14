@@ -147,7 +147,12 @@ describe("deploy pipeline for image targets", () => {
       environments: { production: { url: "https://api.example.com" } },
     });
     const production = workflow(p).jobs["deploy-production"];
-    expect(production?.permissions).toEqual({ packages: "write" });
+    // The fixture has Alembic migrations, so the job checks out the code to apply them first.
+    expect(production?.permissions).toEqual({ contents: "read", packages: "write" });
+    const names = (production?.steps ?? []).map((s) => s.name ?? s.uses ?? "");
+    expect(names.indexOf("Apply the alembic migrations to the production database")).toBeLessThan(
+      names.indexOf("Point the production tag at this image"),
+    );
     const promote = stepNamed(production, "Point the production tag");
     expect(promote?.env).toMatchObject({ TAG_NAME: "production" });
     expect(promote?.run).toContain('imagetools create --tag "$IMAGE:$TAG_NAME" "$IMAGE@$DIGEST"');

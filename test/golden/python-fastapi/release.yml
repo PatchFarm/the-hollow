@@ -163,8 +163,26 @@ jobs:
       group: deploy-staging
       cancel-in-progress: false
     permissions:
+      contents: read
       packages: write
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+      - name: Install dependencies
+        run: uv sync --locked
+      - name: Apply the alembic migrations to the staging database
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error title=Missing secret::Add the DATABASE_URL secret to the staging environment (Settings > Environments > staging), so its database is migrated before the new code goes live. If the app applies its own migrations, set database.migrations to none in hollow.yml."
+            exit 1
+          fi
+          uv run --no-sync alembic upgrade head
       - name: Log in to GHCR
         env:
           GH_TOKEN: ${{ github.token }}
@@ -235,8 +253,26 @@ jobs:
       group: deploy-production
       cancel-in-progress: false
     permissions:
+      contents: read
       packages: write
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+      - name: Install dependencies
+        run: uv sync --locked
+      - name: Apply the alembic migrations to the production database
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error title=Missing secret::Add the DATABASE_URL secret to the production environment (Settings > Environments > production), so its database is migrated before the new code goes live. If the app applies its own migrations, set database.migrations to none in hollow.yml."
+            exit 1
+          fi
+          uv run --no-sync alembic upgrade head
       - name: Log in to GHCR
         env:
           GH_TOKEN: ${{ github.token }}
@@ -264,8 +300,8 @@ jobs:
       group: deploy-production
       cancel-in-progress: false
     permissions:
-      packages: write
       contents: read
+      packages: write
     steps:
       - name: Find the release to deploy
         id: release
@@ -298,6 +334,24 @@ jobs:
           echo "image=$(echo "$ref" | cut -d@ -f1)" >> "$GITHUB_OUTPUT"
           echo "digest=$(echo "$ref" | cut -d@ -f2)" >> "$GITHUB_OUTPUT"
           echo "Deploying release $tag to production, approved by $GITHUB_ACTOR running this workflow." >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ steps.release.outputs.tag }}
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          enable-cache: true
+      - name: Install dependencies
+        run: uv sync --locked
+      - name: Apply the alembic migrations to the production database
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error title=Missing secret::Add the DATABASE_URL secret to the production environment (Settings > Environments > production), so its database is migrated before the new code goes live. If the app applies its own migrations, set database.migrations to none in hollow.yml."
+            exit 1
+          fi
+          uv run --no-sync alembic upgrade head
       - name: Log in to GHCR
         env:
           GH_TOKEN: ${{ github.token }}

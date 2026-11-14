@@ -231,6 +231,10 @@ export const databaseSchema = z.strictObject({
     .max(50)
     .default("allow-destructive-migration")
     .meta({ description: "PR label required to merge a migration that drops or renames data." }),
+  urlSecret: secretName.default("DATABASE_URL").meta({
+    description:
+      "Environment secret with each environment's database URL, used to migrate it before a deploy. On the VPS target, migrations read DATABASE_URL from the server's .env instead.",
+  }),
 });
 
 export const notificationsSchema = z.strictObject({
@@ -273,6 +277,7 @@ export const hollowConfigSchema = z
     database: databaseSchema.default({
       migrations: "auto",
       destructiveChangeLabel: "allow-destructive-migration",
+      urlSecret: "DATABASE_URL",
     }),
     notifications: notificationsSchema.default({ incidentIssues: true }),
     agent: agentSchema.default({ ai: true, maxRepairAttempts: 3, maxSpendUsd: 2 }),

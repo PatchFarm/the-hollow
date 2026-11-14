@@ -1,7 +1,8 @@
 import type { DeployEnvironment, DeployPlan, VercelPlan } from "../pipeline/deploy.js";
 import type { PipelinePlan, ReleasePlan } from "../pipeline/plan.js";
 import { checkout, installBinary, lines, setupSteps } from "./ci.js";
-import { addProductionGate, DISPATCH, type ReleaseSource } from "./gate.js";
+import { migrateFromRunner, migratesFromRunner, SCHEMA_STAYS } from "./deploy-migrations.js";
+import { addProductionGate, DISPATCH, FROM_RUN, type ReleaseSource } from "./gate.js";
 import { ACTIONS, BINARIES, NPM_TOOLS } from "./pins.js";
 import {
   GATE_COMMENT,
@@ -42,14 +43,14 @@ export function renderVercelPipeline(
   for (const environment of deploy.environments) {
     if (environment.name === "staging" || environment.name === "production") continue;
     const id = `deploy-${environment.name}`;
-    jobs[id] = aliasJob(deploy, vercel, environment, previous);
+    jobs[id] = aliasJob(plan, deploy, vercel, environment, previous);
     previous = id;
   }
   const production = deploy.environments.find((environment) => environment.name === "production");
   const last = previous;
   const gated = addProductionGate(
     jobs,
-    (source) => productionJob(vercel, production as DeployEnvironment, last, source),
+    (source) => productionJob(plan, vercel, production as DeployEnvironment, last, source),
     "deployment",
   );
   return renderGenerated(
@@ -283,17 +284,37 @@ function releaseJob(name: string, environment: DeployEnvironment, previous: stri
   };
 }
 
+/**
+ * Before a domain serves the staged deployment, migrate the database it uses. The deployment
+ * runs with production's settings, so that is production's database.
+ */
+function migrateFirst(plan: PipelinePlan, environment: DeployEnvironment, source: ReleaseSource) {
+  if (!migratesFromRunner(plan, environment.name)) return { permissions: {}, steps: [] };
+  const hint =
+    environment.name === "production"
+      ? ""
+      : " (production's database URL: this deployment runs with production's settings)";
+  return {
+    permissions: { contents: "read" },
+    steps: migrateFromRunner(plan, environment.name, source, hint),
+  };
+}
+
 /** Preprod: point its domain at the staged deployment and check it before production. */
 function aliasJob(
+  plan: PipelinePlan,
   deploy: DeployPlan,
   vercel: VercelPlan,
   environment: DeployEnvironment,
   previous: string,
 ): Job {
   const url = environment.url as string;
+  const migrate = migrateFirst(plan, environment, FROM_RUN);
   return {
     ...releaseJob(`Deploy to ${environment.name}`, environment, previous),
+    permissions: migrate.permissions,
     steps: [
+      ...migrate.steps,
       installVercel(),
       aliasStep(vercel, expr("needs.deploy-staging.outputs.url"), hostOf(url)),
       healthCheck(environment.healthUrl ?? `${url}${deploy.healthPath}`, vercel.bypassSecret),
@@ -303,13 +324,15 @@ function aliasJob(
 
 /** Production: promote the staged deployment, check it, and roll back to the previous one. */
 function productionJob(
+  plan: PipelinePlan,
   vercel: VercelPlan,
   environment: DeployEnvironment,
   previous: string,
   source: ReleaseSource,
 ): Job {
   const deployment = source.deployment;
-  const steps: Step[] = [installVercel()];
+  const migrate = migrateFirst(plan, environment, source);
+  const steps: Step[] = [...migrate.steps, installVercel()];
   const host = environment.url === null ? null : hostOf(environment.url);
   if (host !== null) {
     steps.push({
@@ -342,11 +365,15 @@ function productionJob(
         "  exit 0",
         "fi",
         'vercel rollback "https://$PREVIOUS" --timeout 5m --token "$VERCEL_TOKEN"',
-        'echo "::error title=Rolled back::Production is back on https://$PREVIOUS."',
+        `echo "::error title=Rolled back::Production is back on https://$PREVIOUS.${migrate.steps.length > 0 ? ` ${SCHEMA_STAYS}` : ""}"`,
       ]),
     });
   }
-  return { ...releaseJob("Deploy to production", environment, previous), steps };
+  return {
+    ...releaseJob("Deploy to production", environment, previous),
+    permissions: migrate.permissions,
+    steps,
+  };
 }
 
 /**

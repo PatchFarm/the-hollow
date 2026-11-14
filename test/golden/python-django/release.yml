@@ -229,6 +229,57 @@ jobs:
           if [ -f .hollow.env ]; then cp .hollow.env .hollow.env.previous; fi
           printf 'IMAGE=%s\nAPP_PORT=%s\n' "$2" "$4" > .hollow.env
           compose pull --quiet
+          keep_previous() {
+            if [ -f .hollow.env.previous ]; then cp .hollow.env.previous .hollow.env; else rm -f .hollow.env; fi
+          }
+          mkdir -p backups
+          chmod 700 backups
+          cat > .hollow-backup.yaml << 'YAML'
+          services:
+            hollow-backup:
+              image: postgres@sha256:b9f6b8ff03b62f3cfd9d9ba3fe56226a9991c79d3fb46fd46536263bf02be553
+              profiles: [hollow-backup]
+              env_file:
+                - path: .env
+                  required: false
+              volumes:
+                - ./backups:/backups
+                - ./.hollow-backup.sh:/hollow-backup.sh:ro
+              entrypoint: ["sh", "/hollow-backup.sh"]
+          YAML
+          cat > .hollow-backup.sh << 'SCRIPT'
+          set -eu
+          umask 077
+          url="$(printenv DATABASE_URL || true)"
+          if [ -z "$url" ]; then
+            echo "DATABASE_URL is not set in this environment's .env, so there is nothing to back up." >&2
+            exit 1
+          fi
+          stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+          ssl="$(printf '%s' "$url" | sed -nE 's/.*[?&](sslmode=[a-z-]+).*/\1/p')"
+          url="$(printf '%s' "$url" | sed -E 's#^postgres(ql)?(\+[A-Za-z0-9_]+)?://#postgresql://#; s#\?.*$##')"
+          if [ -n "$ssl" ]; then url="$url?$ssl"; fi
+          file="/backups/$stamp.dump"
+          trap 'rm -f -- "$file.partial"' EXIT
+          pg_dump --format=custom --no-owner --dbname="$url" --file="$file.partial"
+          mv -- "$file.partial" "$file"
+          echo "Backed up the database to backups/$(basename "$file")."
+          ls -1t /backups/*.dump | tail -n +8 | while IFS= read -r old; do rm -f -- "$old"; done
+          SCRIPT
+          if compose --file compose.yaml --file .hollow-backup.yaml --profile hollow-backup run --rm -T --user "$(id -u):$(id -g)" hollow-backup < /dev/null; then
+            :
+          elif [ -f .hollow.env.previous ]; then
+            keep_previous
+            echo "The database backup failed, so nothing was migrated or deployed." >&2
+            exit 1
+          else
+            echo "The database backup failed. This is the first deploy, so it goes ahead without one." >&2
+          fi
+          if ! compose run --rm -T app python manage.py migrate --noinput < /dev/null; then
+            keep_previous
+            echo "The django migrations failed, so the new version was not started and the previous one keeps running. The backup from just before is in backups/." >&2
+            exit 1
+          fi
           if compose up --detach --wait --wait-timeout 120; then
             echo "The new version is up and healthy."
             exit 0
@@ -237,7 +288,7 @@ jobs:
           if [ -f .hollow.env.previous ]; then
             cp .hollow.env.previous .hollow.env
             compose up --detach --wait --wait-timeout 120 || true
-            echo "Rolled back to the previous version." >&2
+            echo "Rolled back to the previous version. The database stays migrated: a rollback restores the previous code, not the schema." >&2
           fi
           exit 1
           REMOTE
@@ -363,6 +414,57 @@ jobs:
           if [ -f .hollow.env ]; then cp .hollow.env .hollow.env.previous; fi
           printf 'IMAGE=%s\nAPP_PORT=%s\n' "$2" "$4" > .hollow.env
           compose pull --quiet
+          keep_previous() {
+            if [ -f .hollow.env.previous ]; then cp .hollow.env.previous .hollow.env; else rm -f .hollow.env; fi
+          }
+          mkdir -p backups
+          chmod 700 backups
+          cat > .hollow-backup.yaml << 'YAML'
+          services:
+            hollow-backup:
+              image: postgres@sha256:b9f6b8ff03b62f3cfd9d9ba3fe56226a9991c79d3fb46fd46536263bf02be553
+              profiles: [hollow-backup]
+              env_file:
+                - path: .env
+                  required: false
+              volumes:
+                - ./backups:/backups
+                - ./.hollow-backup.sh:/hollow-backup.sh:ro
+              entrypoint: ["sh", "/hollow-backup.sh"]
+          YAML
+          cat > .hollow-backup.sh << 'SCRIPT'
+          set -eu
+          umask 077
+          url="$(printenv DATABASE_URL || true)"
+          if [ -z "$url" ]; then
+            echo "DATABASE_URL is not set in this environment's .env, so there is nothing to back up." >&2
+            exit 1
+          fi
+          stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+          ssl="$(printf '%s' "$url" | sed -nE 's/.*[?&](sslmode=[a-z-]+).*/\1/p')"
+          url="$(printf '%s' "$url" | sed -E 's#^postgres(ql)?(\+[A-Za-z0-9_]+)?://#postgresql://#; s#\?.*$##')"
+          if [ -n "$ssl" ]; then url="$url?$ssl"; fi
+          file="/backups/$stamp.dump"
+          trap 'rm -f -- "$file.partial"' EXIT
+          pg_dump --format=custom --no-owner --dbname="$url" --file="$file.partial"
+          mv -- "$file.partial" "$file"
+          echo "Backed up the database to backups/$(basename "$file")."
+          ls -1t /backups/*.dump | tail -n +8 | while IFS= read -r old; do rm -f -- "$old"; done
+          SCRIPT
+          if compose --file compose.yaml --file .hollow-backup.yaml --profile hollow-backup run --rm -T --user "$(id -u):$(id -g)" hollow-backup < /dev/null; then
+            :
+          elif [ -f .hollow.env.previous ]; then
+            keep_previous
+            echo "The database backup failed, so nothing was migrated or deployed." >&2
+            exit 1
+          else
+            echo "The database backup failed. This is the first deploy, so it goes ahead without one." >&2
+          fi
+          if ! compose run --rm -T app python manage.py migrate --noinput < /dev/null; then
+            keep_previous
+            echo "The django migrations failed, so the new version was not started and the previous one keeps running. The backup from just before is in backups/." >&2
+            exit 1
+          fi
           if compose up --detach --wait --wait-timeout 120; then
             echo "The new version is up and healthy."
             exit 0
@@ -371,7 +473,7 @@ jobs:
           if [ -f .hollow.env.previous ]; then
             cp .hollow.env.previous .hollow.env
             compose up --detach --wait --wait-timeout 120 || true
-            echo "Rolled back to the previous version." >&2
+            echo "Rolled back to the previous version. The database stays migrated: a rollback restores the previous code, not the schema." >&2
           fi
           exit 1
           REMOTE
@@ -486,6 +588,57 @@ jobs:
           if [ -f .hollow.env ]; then cp .hollow.env .hollow.env.previous; fi
           printf 'IMAGE=%s\nAPP_PORT=%s\n' "$2" "$4" > .hollow.env
           compose pull --quiet
+          keep_previous() {
+            if [ -f .hollow.env.previous ]; then cp .hollow.env.previous .hollow.env; else rm -f .hollow.env; fi
+          }
+          mkdir -p backups
+          chmod 700 backups
+          cat > .hollow-backup.yaml << 'YAML'
+          services:
+            hollow-backup:
+              image: postgres@sha256:b9f6b8ff03b62f3cfd9d9ba3fe56226a9991c79d3fb46fd46536263bf02be553
+              profiles: [hollow-backup]
+              env_file:
+                - path: .env
+                  required: false
+              volumes:
+                - ./backups:/backups
+                - ./.hollow-backup.sh:/hollow-backup.sh:ro
+              entrypoint: ["sh", "/hollow-backup.sh"]
+          YAML
+          cat > .hollow-backup.sh << 'SCRIPT'
+          set -eu
+          umask 077
+          url="$(printenv DATABASE_URL || true)"
+          if [ -z "$url" ]; then
+            echo "DATABASE_URL is not set in this environment's .env, so there is nothing to back up." >&2
+            exit 1
+          fi
+          stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+          ssl="$(printf '%s' "$url" | sed -nE 's/.*[?&](sslmode=[a-z-]+).*/\1/p')"
+          url="$(printf '%s' "$url" | sed -E 's#^postgres(ql)?(\+[A-Za-z0-9_]+)?://#postgresql://#; s#\?.*$##')"
+          if [ -n "$ssl" ]; then url="$url?$ssl"; fi
+          file="/backups/$stamp.dump"
+          trap 'rm -f -- "$file.partial"' EXIT
+          pg_dump --format=custom --no-owner --dbname="$url" --file="$file.partial"
+          mv -- "$file.partial" "$file"
+          echo "Backed up the database to backups/$(basename "$file")."
+          ls -1t /backups/*.dump | tail -n +8 | while IFS= read -r old; do rm -f -- "$old"; done
+          SCRIPT
+          if compose --file compose.yaml --file .hollow-backup.yaml --profile hollow-backup run --rm -T --user "$(id -u):$(id -g)" hollow-backup < /dev/null; then
+            :
+          elif [ -f .hollow.env.previous ]; then
+            keep_previous
+            echo "The database backup failed, so nothing was migrated or deployed." >&2
+            exit 1
+          else
+            echo "The database backup failed. This is the first deploy, so it goes ahead without one." >&2
+          fi
+          if ! compose run --rm -T app python manage.py migrate --noinput < /dev/null; then
+            keep_previous
+            echo "The django migrations failed, so the new version was not started and the previous one keeps running. The backup from just before is in backups/." >&2
+            exit 1
+          fi
           if compose up --detach --wait --wait-timeout 120; then
             echo "The new version is up and healthy."
             exit 0
@@ -494,7 +647,7 @@ jobs:
           if [ -f .hollow.env.previous ]; then
             cp .hollow.env.previous .hollow.env
             compose up --detach --wait --wait-timeout 120 || true
-            echo "Rolled back to the previous version." >&2
+            echo "Rolled back to the previous version. The database stays migrated: a rollback restores the previous code, not the schema." >&2
           fi
           exit 1
           REMOTE

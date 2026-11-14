@@ -241,8 +241,29 @@ jobs:
     concurrency:
       group: deploy-production
       cancel-in-progress: false
-    permissions: {}
+    permissions:
+      contents: read
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm exec --no -- prisma generate
+      - name: Apply the prisma migrations to the production database
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error title=Missing secret::Add the DATABASE_URL secret to the production environment (Settings > Environments > production), so its database is migrated before the new code goes live. If the app applies its own migrations, set database.migrations to none in hollow.yml."
+            exit 1
+          fi
+          npm exec --no -- prisma migrate deploy
       - name: Install the Vercel CLI 65.9.0
         env:
           URL: https://registry.npmjs.org/vercel/-/vercel-65.9.0.tgz
@@ -305,6 +326,27 @@ jobs:
           fi
           echo "deployment=$url" >> "$GITHUB_OUTPUT"
           echo "Deploying release $tag to production, approved by $GITHUB_ACTOR running this workflow." >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ steps.release.outputs.tag }}
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm exec --no -- prisma generate
+      - name: Apply the prisma migrations to the production database
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error title=Missing secret::Add the DATABASE_URL secret to the production environment (Settings > Environments > production), so its database is migrated before the new code goes live. If the app applies its own migrations, set database.migrations to none in hollow.yml."
+            exit 1
+          fi
+          npm exec --no -- prisma migrate deploy
       - name: Install the Vercel CLI 65.9.0
         env:
           URL: https://registry.npmjs.org/vercel/-/vercel-65.9.0.tgz

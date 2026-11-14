@@ -395,7 +395,8 @@
     "database": {
       "default": {
         "migrations": "auto",
-        "destructiveChangeLabel": "allow-destructive-migration"
+        "destructiveChangeLabel": "allow-destructive-migration",
+        "urlSecret": "DATABASE_URL"
       },
       "type": "object",
       "properties": {
@@ -417,6 +418,12 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 50
+        },
+        "urlSecret": {
+          "default": "DATABASE_URL",
+          "description": "Environment secret with each environment's database URL, used to migrate it before a deploy. On the VPS target, migrations read DATABASE_URL from the server's .env instead.",
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]*$"
         }
       },
       "additionalProperties": false

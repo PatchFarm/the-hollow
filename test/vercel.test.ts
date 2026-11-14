@@ -90,7 +90,12 @@ describe("Vercel deploys", () => {
         "needs.release-please.outputs.released == 'true' && needs.production-gate.outputs.reviewed == 'true'",
       ),
     );
-    expect(production?.permissions).toEqual({});
+    // Prisma migrations: the job checks out the code to migrate production's database first.
+    expect(production?.permissions).toEqual({ contents: "read" });
+    expect(step(staging, "Apply the prisma")).toBeUndefined();
+    expect(step(production, "Apply the prisma migrations to the production database")?.env).toEqual(
+      { DATABASE_URL: expr("secrets.DATABASE_URL") },
+    );
     const promote = step(production, "Promote the staged deployment");
     expect(promote?.env?.DEPLOYMENT).toBe(expr("needs.deploy-staging.outputs.url"));
     expect(promote?.run).toContain('vercel promote "$DEPLOYMENT" --yes');

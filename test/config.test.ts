@@ -33,7 +33,11 @@ describe("hollow.yml", () => {
       protection: { requiredApprovals: 0 },
       verify: { healthPath: "/" },
       security: { failOn: "high", sast: "auto" },
-      database: { migrations: "auto", destructiveChangeLabel: "allow-destructive-migration" },
+      database: {
+        migrations: "auto",
+        destructiveChangeLabel: "allow-destructive-migration",
+        urlSecret: "DATABASE_URL",
+      },
       notifications: { incidentIssues: true },
       agent: { ai: true, maxRepairAttempts: 3, maxSpendUsd: 2 },
     });

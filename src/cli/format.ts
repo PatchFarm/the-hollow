@@ -1,5 +1,6 @@
 import type { LoadResult } from "../config/load.js";
 import type { Detection, Finding } from "../detect/index.js";
+import type { DeployMigrations } from "../pipeline/migrations.js";
 import type { PlanResult } from "../pipeline/plan.js";
 
 /** Human-readable report for `hollow plan`. Plain text, no colors, so it reads well in CI logs. */
@@ -78,7 +79,7 @@ export function formatPlan(detection: Detection, config: LoadResult, pipeline: P
       const m = plan.migrations;
       row(
         "Migrations",
-        `${m.tool}: ${m.appliesInCi ? "applied to the CI database on every run" : "not applied in CI (no database)"}; destructive changes need the "${m.label}" label`,
+        `${m.tool}: ${m.appliesInCi ? "applied to the CI database on every run" : "not applied in CI (no database)"}${deployMigrations(m.deploy)}; destructive changes need the "${m.label}" label`,
       );
     }
     if (plan.release !== null) {
@@ -130,6 +131,16 @@ export function formatPlan(detection: Detection, config: LoadResult, pipeline: P
   }
   lines.push("");
   return lines.join("\n");
+}
+
+function deployMigrations(deploy: DeployMigrations | null): string {
+  if (deploy === null) return "";
+  if (deploy.where === "image") {
+    return deploy.backup === null
+      ? ", and inside the new image on the server before each deploy"
+      : `, and inside the new image on the server before each deploy, after a ${deploy.backup === "postgres" ? "pg_dump" : "mysqldump"} backup`;
+  }
+  return `, and to the ${deploy.environments.join(", ")} database${deploy.environments.length === 1 ? "" : "s"} before each deploy (${deploy.secret} secret)`;
 }
 
 function languageLabel(detection: Detection): string {
