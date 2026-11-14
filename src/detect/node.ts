@@ -132,6 +132,7 @@ export function detectNode(files: ProjectFiles, result: Detection): void {
     test: Object.hasOwn(scripts, "test") && !isNpmInitTestStub(scripts.test),
     lint: Object.hasOwn(scripts, "lint"),
     typecheck: Object.hasOwn(scripts, "typecheck") || Object.hasOwn(scripts, "type-check"),
+    start: Object.hasOwn(scripts, "start"),
   };
 }
 

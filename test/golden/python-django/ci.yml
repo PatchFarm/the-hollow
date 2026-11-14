@@ -168,6 +168,33 @@ jobs:
       - name: Fail on high or worse
         run: semgrep scan --config p/default --metrics off --error --severity ERROR
 
+  container:
+    name: Container scan (Trivy)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build the image
+        env:
+          DOCKERFILE: Dockerfile
+        run: docker build --file "$DOCKERFILE" --tag hollow-ci:scan .
+      - name: Install Trivy 0.76.1
+        env:
+          URL: https://github.com/aquasecurity/trivy/releases/download/v0.76.1/trivy_0.76.1_Linux-64bit.tar.gz
+          SHA256: c7cbe3137fb8a48a17574bede3dd6beb16742d1e9772929940fc90082c39d9c0
+        run: |
+          curl --fail --silent --show-error --location --retry 3 --output "$RUNNER_TEMP/trivy.tar.gz" "$URL"
+          echo "$SHA256  $RUNNER_TEMP/trivy.tar.gz" | sha256sum --check --strict
+          tar --extract --gzip --file "$RUNNER_TEMP/trivy.tar.gz" --directory "$RUNNER_TEMP" trivy
+      - name: Fail on high or worse (fixable findings)
+        env:
+          SEVERITY: HIGH,CRITICAL
+        run: '"$RUNNER_TEMP/trivy" image --severity "$SEVERITY" --ignore-unfixed --exit-code 1 --no-progress hollow-ci:scan'
+
   # One stable check name to require in branch protection, whatever jobs run above.
   ci-passed:
     name: CI passed
@@ -178,6 +205,7 @@ jobs:
       - dependencies
       - codeql
       - semgrep
+      - container
     runs-on: ubuntu-latest
     timeout-minutes: 2
     permissions: {}

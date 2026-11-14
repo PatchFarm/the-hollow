@@ -1,0 +1,29 @@
+# Created by The Hollow: what each environment runs on your server. It is yours now:
+# edit it freely, and `hollow upgrade` will never change it.
+#
+# Each deploy copies this file to /srv/app/<environment>/compose.yaml and sets IMAGE to the
+# released image (by digest) and APP_PORT to the environment's port on 127.0.0.1:
+# staging 8001, production 8000.
+# Point your reverse proxy at those ports, and put each environment's runtime settings in
+# /srv/app/<environment>/.env on the server.
+services:
+  app:
+    image: ${IMAGE:?IMAGE is set by the deploy workflow}
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    ports:
+      - "127.0.0.1:${APP_PORT:-8000}:8000"
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import http.client, sys; c = http.client.HTTPConnection('127.0.0.1', 8000, timeout=5); c.request('GET', '/'); sys.exit(c.getresponse().status >= 500)"
+      interval: 10s
+      timeout: 6s
+      retries: 3
+      start_period: 30s

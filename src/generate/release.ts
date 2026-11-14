@@ -1,3 +1,4 @@
+import { DEPLOY_COMPOSE, type DeployEnvironment, type DeployPlan } from "../pipeline/deploy.js";
 import type {
   ArchiveArtifact,
   ImageArtifact,
@@ -22,6 +23,9 @@ const RELEASE = "needs.release-please.outputs";
  * Deploys (M3) will promote exactly this artifact.
  */
 export function renderReleaseWorkflow(plan: PipelinePlan, release: ReleasePlan): string {
+  if (release.artifact.kind === "image" && plan.deploy !== null) {
+    return renderImagePipeline(plan, release, release.artifact, plan.deploy);
+  }
   const workflow = {
     name: "Release",
     on: { push: { branches: [plan.defaultBranch] } },
@@ -46,11 +50,16 @@ export function renderReleaseWorkflow(plan: PipelinePlan, release: ReleasePlan):
   });
 }
 
-function releasePleaseJob(release: ReleasePlan): Job {
+function releasePleaseJob(release: ReleasePlan, ownConcurrency = false): Job {
   return {
     name: "Release PR and tag",
     "runs-on": "ubuntu-latest",
     "timeout-minutes": 10,
+    // Image pipelines have no workflow-wide lock (staging deploys run while a release waits for
+    // approval), so release-please keeps its own.
+    ...(ownConcurrency
+      ? { concurrency: { group: "release-please", "cancel-in-progress": false } }
+      : {}),
     permissions: { contents: "write", "pull-requests": "write", issues: "write" },
     outputs: {
       released: expr("steps.release.outputs.release_created"),
@@ -230,4 +239,380 @@ function archiveJob(plan: PipelinePlan, artifact: ArchiveArtifact): Job {
     }),
     steps,
   };
+}
+
+const BUILD = "needs.build.outputs";
+const RELEASED = `${RELEASE}.released == 'true'`;
+
+/**
+ * Image targets build once on every merge to the default branch, deploy that image to staging,
+ * and promote the very same digest to preprod and production when a release is cut.
+ */
+function renderImagePipeline(
+  plan: PipelinePlan,
+  release: ReleasePlan,
+  artifact: ImageArtifact,
+  deploy: DeployPlan,
+): string {
+  const jobs: Record<string, Job> = {
+    "release-please": releasePleaseJob(release, true),
+    build: buildImageJob(artifact),
+    "release-assets": releaseAssetsJob(),
+  };
+  const comments: Record<string, string> = {
+    "jobs.release-please": `Uses the ${release.tokenSecret} secret when set, so release pull requests run CI; otherwise the workflow token.`,
+    "jobs.build": "Every merge builds the image once. Every environment runs this exact digest.",
+    "jobs.release-assets":
+      "A release tags the image with its version and attaches the SBOM and digest.",
+  };
+  let previous: string | null = null;
+  for (const environment of deploy.environments) {
+    const id = `deploy-${environment.name}`;
+    jobs[id] = deployJob(deploy, environment, previous);
+    if (environment.name === "production") {
+      comments[`jobs.${id}`] =
+        "Waits for the production environment's approval, then promotes the same digest.";
+    }
+    previous = id;
+  }
+  const workflow = {
+    name: "Release",
+    on: { push: { branches: [plan.defaultBranch] } },
+    permissions: {},
+    jobs,
+  };
+  return renderGenerated(workflow, {
+    about: [
+      "Every merge deploys to staging. Merging the release pull request promotes that same image to production.",
+    ],
+    comments,
+  });
+}
+
+function imageEnv(): Record<string, string> {
+  return { IMAGE: expr(`${BUILD}.image`), DIGEST: expr(`${BUILD}.digest`) };
+}
+
+function ghcrLogin(): Step {
+  return {
+    name: "Log in to GHCR",
+    env: { GH_TOKEN: expr("github.token") },
+    run: 'echo "$GH_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin',
+  };
+}
+
+function buildImageJob(artifact: ImageArtifact): Job {
+  return {
+    name: "Build the image",
+    "runs-on": "ubuntu-latest",
+    "timeout-minutes": 30,
+    permissions: {
+      contents: "read",
+      packages: "write",
+      "id-token": "write",
+      attestations: "write",
+    },
+    outputs: {
+      image: expr("steps.image.outputs.image"),
+      digest: expr("steps.image.outputs.digest"),
+    },
+    steps: [
+      checkout(),
+      ghcrLogin(),
+      {
+        name: "Build and push the image",
+        id: "image",
+        env: { DOCKERFILE: artifact.dockerfile, IMAGE_NAME: artifact.image ?? "" },
+        run: lines([
+          'name="$IMAGE_NAME"',
+          'if [ -z "$name" ]; then name="$GITHUB_REPOSITORY"; fi',
+          "image=\"ghcr.io/$(echo \"$name\" | tr '[:upper:]' '[:lower:]')\"",
+          'docker build --file "$DOCKERFILE" \\',
+          '  --label "org.opencontainers.image.source=$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \\',
+          '  --label "org.opencontainers.image.revision=$GITHUB_SHA" \\',
+          '  --tag "$image:sha-$GITHUB_SHA" .',
+          'docker push "$image:sha-$GITHUB_SHA"',
+          'digest="$(docker inspect --format \'{{index .RepoDigests 0}}\' "$image:sha-$GITHUB_SHA" | cut -d@ -f2)"',
+          'echo "image=$image" >> "$GITHUB_OUTPUT"',
+          'echo "digest=$digest" >> "$GITHUB_OUTPUT"',
+          'echo "Built $image@$digest" >> "$GITHUB_STEP_SUMMARY"',
+        ]),
+      },
+      installBinary("syft", "Syft", BINARIES.syft, true),
+      {
+        name: "Generate the SBOM",
+        env: buildStepEnv(),
+        run: '"$RUNNER_TEMP/syft" scan "registry:$IMAGE@$DIGEST" --output "spdx-json=$RUNNER_TEMP/sbom.spdx.json"',
+      },
+      {
+        name: "Attest build provenance",
+        uses: ACTIONS.attest.uses,
+        with: {
+          "subject-name": expr("steps.image.outputs.image"),
+          "subject-digest": expr("steps.image.outputs.digest"),
+          "push-to-registry": true,
+        },
+      },
+      {
+        name: "Attest the SBOM",
+        uses: ACTIONS.attest.uses,
+        with: {
+          "subject-name": expr("steps.image.outputs.image"),
+          "subject-digest": expr("steps.image.outputs.digest"),
+          "sbom-path": `${expr("runner.temp")}/sbom.spdx.json`,
+          "push-to-registry": true,
+        },
+      },
+    ],
+  };
+}
+
+/** Inside the build job the image comes from its own step, not from `needs`. */
+function buildStepEnv(): Record<string, string> {
+  return { IMAGE: expr("steps.image.outputs.image"), DIGEST: expr("steps.image.outputs.digest") };
+}
+
+function releaseAssetsJob(): Job {
+  return {
+    name: "Attach the release assets",
+    needs: ["release-please", "build"],
+    if: expr(RELEASED),
+    "runs-on": "ubuntu-latest",
+    "timeout-minutes": 15,
+    permissions: { contents: "write", packages: "write" },
+    steps: [
+      ghcrLogin(),
+      {
+        name: "Tag the image with the version",
+        env: { ...imageEnv(), VERSION: expr(`${RELEASE}.version`) },
+        run: 'docker buildx imagetools create --tag "$IMAGE:$VERSION" "$IMAGE@$DIGEST"',
+      },
+      installBinary("syft", "Syft", BINARIES.syft, true),
+      {
+        name: "Attach the SBOM and image digest to the release",
+        env: { ...imageEnv(), ...releaseEnv(), GH_TOKEN: expr("github.token") },
+        run: lines([
+          '"$RUNNER_TEMP/syft" scan "registry:$IMAGE@$DIGEST" --output "spdx-json=$RUNNER_TEMP/sbom.spdx.json"',
+          'echo "$IMAGE@$DIGEST" > "$RUNNER_TEMP/image-digest.txt"',
+          'gh release upload "$TAG" "$RUNNER_TEMP/sbom.spdx.json" "$RUNNER_TEMP/image-digest.txt" --repo "$GITHUB_REPOSITORY" --clobber',
+        ]),
+      },
+    ],
+  };
+}
+
+function deployJob(
+  deploy: DeployPlan,
+  environment: DeployEnvironment,
+  previous: string | null,
+): Job {
+  const needs = environment.onRelease
+    ? ["release-please", "build", "release-assets", ...(previous === null ? [] : [previous])]
+    : ["build"];
+  const job: Job = {
+    name: `Deploy to ${environment.name}`,
+    needs,
+    ...(environment.onRelease ? { if: expr(RELEASED) } : {}),
+    "runs-on": "ubuntu-latest",
+    "timeout-minutes": 20,
+    environment:
+      environment.url === null
+        ? environment.name
+        : { name: environment.name, url: environment.url },
+    concurrency: { group: `deploy-${environment.name}`, "cancel-in-progress": false },
+  };
+  if (deploy.vps === null) {
+    return {
+      ...job,
+      permissions: { packages: "write" },
+      steps: registrySteps(environment),
+    };
+  }
+  return {
+    ...job,
+    permissions: { contents: "read", packages: "read" },
+    steps: vpsSteps(deploy, environment),
+  };
+}
+
+/** Docker target: move the environment's tag (`:staging`, `:production`) to the new digest. */
+function registrySteps(environment: DeployEnvironment): Step[] {
+  const env = { ...imageEnv(), TAG_NAME: environment.name };
+  const steps: Step[] = [
+    ghcrLogin(),
+    {
+      name: `Point the ${environment.name} tag at this image`,
+      id: "promote",
+      env,
+      run: lines([
+        "previous=\"$(docker buildx imagetools inspect \"$IMAGE:$TAG_NAME\" --format '{{json .Manifest}}' 2> /dev/null | jq --raw-output '.digest // empty' || true)\"",
+        'echo "previous=$previous" >> "$GITHUB_OUTPUT"',
+        'docker buildx imagetools create --tag "$IMAGE:$TAG_NAME" "$IMAGE@$DIGEST"',
+        'echo "Deployed $IMAGE@$DIGEST as $TAG_NAME" >> "$GITHUB_STEP_SUMMARY"',
+      ]),
+    },
+  ];
+  if (environment.healthUrl !== null) {
+    steps.push(healthCheck(environment.healthUrl), {
+      name: "Roll back",
+      if: expr("failure() && steps.promote.outcome == 'success'"),
+      env: { ...env, PREVIOUS: expr("steps.promote.outputs.previous") },
+      run: lines([
+        'if [ -z "$PREVIOUS" ]; then',
+        '  echo "::warning title=Rollback::There is no earlier $TAG_NAME image to roll back to."',
+        "  exit 0",
+        "fi",
+        'docker buildx imagetools create --tag "$IMAGE:$TAG_NAME" "$IMAGE@$PREVIOUS"',
+        'echo "::error title=Rolled back::$TAG_NAME is back on $IMAGE@$PREVIOUS."',
+      ]),
+    });
+  }
+  return steps;
+}
+
+/** Checks the URL until it answers without a server error, for up to two minutes. */
+function healthCheck(url: string): Step {
+  return {
+    name: `Check ${url}`,
+    env: { URL: url },
+    run: lines([
+      "for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do",
+      '  code="$(curl --silent --location --max-time 10 --output /dev/null --write-out \'%{http_code}\' "$URL" || true)"',
+      '  if [ "$code" -ge 200 ] && [ "$code" -lt 500 ]; then',
+      '    echo "$URL answered $code (attempt $attempt)."',
+      "    exit 0",
+      "  fi",
+      "  sleep 10",
+      "done",
+      'echo "::error title=Health check::$URL did not answer without a server error within two minutes (last status: $code)."',
+      "exit 1",
+    ]),
+  };
+}
+
+/** Shell function every VPS step uses to reach the server, with the pinned host key. */
+const REMOTE = [
+  "remote() {",
+  '  ssh -i "$HOME/.ssh/deploy_key" -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \\',
+  '    -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -p "$SSH_PORT" "$SSH_USER@$HOST" "$@"',
+  "}",
+  "project=\"$(basename \"$GITHUB_REPOSITORY\" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_-]/-/g')-$ENVIRONMENT\"",
+];
+
+/** Runs on the server: `docker compose` with the project's .env (if any) and The Hollow's. */
+const REMOTE_COMPOSE = [
+  "compose() {",
+  "  if [ -f .env ]; then",
+  '    docker compose --project-name "$project" --env-file .env --env-file .hollow.env "$@"',
+  "  else",
+  '    docker compose --project-name "$project" --env-file .hollow.env "$@"',
+  "  fi",
+  "}",
+];
+
+function vpsSteps(deploy: DeployPlan, environment: DeployEnvironment): Step[] {
+  const vps = deploy.vps;
+  if (vps === null) return [];
+  const name = environment.name;
+  const server = {
+    HOST: vps.host,
+    SSH_USER: vps.user,
+    SSH_PORT: String(vps.sshPort),
+    DIR: `${vps.path.replace(/\/+$/, "")}/${name}`,
+    ENVIRONMENT: name,
+  };
+  const steps: Step[] = [
+    checkout(),
+    {
+      name: "Set up SSH",
+      env: {
+        SSH_KEY: expr(`secrets.${vps.sshKeySecret}`),
+        KNOWN_HOSTS: expr(`vars.${vps.knownHostsVariable}`),
+      },
+      run: lines([
+        'if [ -z "$SSH_KEY" ]; then',
+        `  echo "::error title=Missing secret::Add the ${vps.sshKeySecret} secret to the ${name} environment (Settings > Environments > ${name})."`,
+        "  exit 1",
+        "fi",
+        'if [ -z "$KNOWN_HOSTS" ]; then',
+        `  echo "::error title=Missing variable::Add the ${vps.knownHostsVariable} variable to the ${name} environment, set to the output of: ssh-keyscan -p ${vps.sshPort} ${vps.host}"`,
+        "  exit 1",
+        "fi",
+        'install -d -m 700 "$HOME/.ssh"',
+        'printf \'%s\\n\' "$SSH_KEY" > "$HOME/.ssh/deploy_key"',
+        'chmod 600 "$HOME/.ssh/deploy_key"',
+        'printf \'%s\\n\' "$KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"',
+      ]),
+    },
+    {
+      name: `Deploy to ${vps.host}`,
+      id: "deploy",
+      env: {
+        ...server,
+        IMAGE_REF: `${expr(`${BUILD}.image`)}@${expr(`${BUILD}.digest`)}`,
+        APP_PORT: expr(`vars.APP_PORT || '${environment.hostPort}'`),
+        GH_TOKEN: expr("github.token"),
+      },
+      run: lines([
+        'case "$APP_PORT" in',
+        "  '' | *[!0-9]*)",
+        "    echo \"::error title=APP_PORT::The APP_PORT variable must be a port number, not '$APP_PORT'.\"",
+        "    exit 1",
+        "    ;;",
+        "esac",
+        ...REMOTE,
+        'remote mkdir -p -- "$DIR"',
+        'scp -i "$HOME/.ssh/deploy_key" -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \\',
+        '  -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -P "$SSH_PORT" \\',
+        `  ${DEPLOY_COMPOSE} "$SSH_USER@$HOST:$DIR/compose.yaml"`,
+        'echo "$GH_TOKEN" | remote docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin',
+        "trap 'remote docker logout ghcr.io > /dev/null || true' EXIT",
+        'remote sh -s -- "$DIR" "$IMAGE_REF" "$project" "$APP_PORT" << \'REMOTE\'',
+        "set -eu",
+        'cd "$1"',
+        'project="$3"',
+        ...REMOTE_COMPOSE,
+        "if [ -f .hollow.env ]; then cp .hollow.env .hollow.env.previous; fi",
+        'printf \'IMAGE=%s\\nAPP_PORT=%s\\n\' "$2" "$4" > .hollow.env',
+        "compose pull --quiet",
+        "if compose up --detach --wait --wait-timeout 120; then",
+        '  echo "The new version is up and healthy."',
+        "  exit 0",
+        "fi",
+        'echo "The new version did not become healthy." >&2',
+        "if [ -f .hollow.env.previous ]; then",
+        "  cp .hollow.env.previous .hollow.env",
+        "  compose up --detach --wait --wait-timeout 120 || true",
+        '  echo "Rolled back to the previous version." >&2',
+        "fi",
+        "exit 1",
+        "REMOTE",
+        'echo "Deployed $IMAGE_REF to $ENVIRONMENT on $HOST" >> "$GITHUB_STEP_SUMMARY"',
+      ]),
+    },
+  ];
+  if (environment.healthUrl !== null) {
+    steps.push(healthCheck(environment.healthUrl), {
+      name: "Roll back",
+      if: expr("failure() && steps.deploy.outcome == 'success'"),
+      env: server,
+      run: lines([
+        ...REMOTE,
+        'remote sh -s -- "$DIR" "$project" << \'REMOTE\'',
+        "set -eu",
+        'cd "$1"',
+        'project="$2"',
+        ...REMOTE_COMPOSE,
+        "if [ ! -f .hollow.env.previous ]; then",
+        '  echo "There is no earlier version to roll back to." >&2',
+        "  exit 0",
+        "fi",
+        "cp .hollow.env.previous .hollow.env",
+        "compose up --detach --wait --wait-timeout 120",
+        "REMOTE",
+        'echo "::error title=Rolled back::$ENVIRONMENT on $HOST is back on the previous version."',
+      ]),
+    });
+  }
+  return steps;
 }

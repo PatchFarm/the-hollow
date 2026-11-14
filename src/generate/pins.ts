@@ -102,6 +102,52 @@ export const IMAGES = {
   },
 } as const satisfies Record<string, ImagePin>;
 
+/**
+ * Base images for the starter Dockerfile, one per supported runtime line. Exact version tags, so
+ * the comment says what is inside; Dependabot updates the digest in each project afterwards.
+ */
+export const BASE_IMAGES = {
+  node: {
+    "22": {
+      image:
+        "node:22.23.3-trixie-slim@sha256:28d03803f09ba76560e273af33beb7eda4ed68fa0698bc9bd15e9a6e35693923",
+      version: "22.23.3",
+    },
+    "24": {
+      image:
+        "node:24.22.1-trixie-slim@sha256:89c5244bc22a9bc3287d89ebc7e49b9cb5bb84cd40e6175ac3421d5a9f68b95a",
+      version: "24.22.1",
+    },
+  },
+  python: {
+    "3.12": {
+      image:
+        "python:3.12.15-slim-trixie@sha256:a0f57064cbdcd6285fa45f51237ab0b35ea8ebaed06a1f5973e89e19dfb86704",
+      version: "3.12.15",
+    },
+    "3.13": {
+      image:
+        "python:3.13.17-slim-trixie@sha256:d98cc29d3266e535dd9da1099688d9cb3ca4753813571e071763d17725460962",
+      version: "3.13.17",
+    },
+    "3.14": {
+      image:
+        "python:3.14.9-slim-trixie@sha256:35caba83af2fe6da9a5d922f9b0156f21d1246a48278c58a08bd253303ba42e8",
+      version: "3.14.9",
+    },
+  },
+} as const satisfies Record<string, Record<string, ImagePin>>;
+
+/** Runtime line used when the project's own version is not one of the above. */
+export const DEFAULT_RUNTIME = { node: "24", python: "3.13" } as const;
+
+/** uv's image, copied into the starter Dockerfile for uv projects. */
+export const UV_IMAGE: ImagePin = {
+  image:
+    "ghcr.io/astral-sh/uv:0.13.6@sha256:af22a52f5eafef3d78e551599d405c02df61919d18028f0cea8eda93bc9986d0",
+  version: "0.13.6",
+};
+
 export interface HookPin {
   repo: string;
   /** Full commit SHA of the release tag (pre-commit accepts SHAs as `rev`). */

@@ -224,6 +224,36 @@ function printNextSteps(plan: PipelinePlan, options: GenerateOptions): void {
       "Turn on the git hooks in each clone: pipx install pre-commit && pre-commit install",
     );
   }
+  const deploy = plan.deploy;
+  if (deploy?.vps) {
+    const vps = deploy.vps;
+    const ports = deploy.environments
+      .map((environment) => `127.0.0.1:${environment.hostPort} (${environment.name})`)
+      .join(", ");
+    steps.push(
+      `Prepare ${vps.host}: Docker with Compose 2.24 or newer, a ${vps.user} user allowed to run docker, and a reverse proxy that sends each domain to ${ports}.`,
+      `Make an SSH key for deploys and add its public key to ${vps.user}'s ~/.ssh/authorized_keys. In each environment on GitHub (Settings > Environments), add the private key as the ${vps.sshKeySecret} secret and the output of \`ssh-keyscan -p ${vps.sshPort} ${vps.host}\` as the ${vps.knownHostsVariable} variable.`,
+    );
+  } else if (deploy !== null) {
+    steps.push(
+      "Every merge publishes the image and points its :staging tag at it; each release moves :production. Point whatever runs the container at those tags.",
+    );
+  }
+  if (deploy?.environments.some((environment) => environment.healthUrl === null)) {
+    const missing = deploy.environments
+      .filter((environment) => environment.healthUrl === null)
+      .map((environment) => environment.name)
+      .join(", ");
+    steps.push(
+      `Set environments.<name>.url in hollow.yml for ${missing} and run \`hollow upgrade\`, so each deploy is checked and rolled back if it fails.`,
+    );
+  }
+  if (plan.release?.artifact.kind === "image" && plan.release.artifact.starter !== null) {
+    steps.push(
+      "Check the starter Dockerfile: build and run it once with `docker build -t app . && docker run --rm -p 8080:" +
+        `${plan.release.artifact.starter.appPort} app\`.`,
+    );
+  }
   if (plan.release !== null) {
     steps.push(
       `Optional: add a fine-grained token with Contents and Pull requests write access as the ${plan.release.tokenSecret} secret, so CI also runs on release PRs.`,

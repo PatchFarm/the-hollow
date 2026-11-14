@@ -1,6 +1,6 @@
 # The Hollow
 
-**Status: early development. For Node/TypeScript and Python, The Hollow generates CI (build, quality, tests and security scanning) and release workflows, and protects the repo on GitHub. Deploys come next. There is no npm release yet.**
+**Status: early development. For Node/TypeScript and Python, The Hollow generates CI (build, quality, tests and security scanning) and release workflows, protects the repo on GitHub, and deploys to Docker (GHCR) and VPS targets. Vercel and Cloudflare deploys come next. There is no npm release yet.**
 
 The Hollow is an AI agent that sets up a complete, secure CI/CD pipeline for your project on GitHub Actions. It works out what your project needs, writes the pipeline, runs it, fixes it until it passes, and hands you the result as a pull request.
 
@@ -37,14 +37,16 @@ node dist/cli.js plan --cwd /path/to/your/project
   - your project's own lint, format, type check, test and build steps, with a database service container when the app uses one
   - Gitleaks (secrets), OSV-Scanner (dependencies), CodeQL on public repos or Semgrep on private ones, and Trivy when there is a Dockerfile
   - one `CI passed` check to require in branch protection
-- `.github/workflows/release.yml`, which versions releases from your Conventional Commits with [release-please](https://github.com/googleapis/release-please). It keeps a release pull request open with the changelog; merging it tags the version, creates the GitHub release, and builds one artifact:
-  - a container image on GHCR, by digest, for the Docker and VPS targets
-  - a tarball of your build output (or of the source, when the output folder is unknown) for Vercel and Cloudflare
-  - an SBOM (Syft) and a signed build provenance attestation, attached to the image and the release
+- `.github/workflows/release.yml`, which versions releases from your Conventional Commits with [release-please](https://github.com/googleapis/release-please). It keeps a release pull request open with the changelog; merging it tags the version and creates the GitHub release.
+  - **Docker and VPS targets:** every merge builds the image once, pushes it to GHCR with an SBOM (Syft) and a signed provenance attestation, and deploys it to `staging`. A release tags that same digest with its version and promotes it to `preprod` (if enabled) and then `production`, which waits for approval. Nothing is rebuilt along the way.
+    - Docker: each environment is a tag (`:staging`, `:production`) moved to the new digest; point whatever runs the container at those tags.
+    - VPS: the workflow connects over SSH (with the server's host key pinned), copies `deploy/compose.yaml` to `<path>/<environment>/` and runs `docker compose up --wait`. Environments can share a server: production listens on the app port, staging on the next one and preprod on the one after, all on 127.0.0.1 behind your reverse proxy.
+    - After each deploy, the environment's `url` plus `verify.healthPath` must answer without a server error within two minutes, or the deploy is rolled back to the previous digest. On a VPS the container's own health check is also required.
+  - **Vercel and Cloudflare targets:** for now, a release attaches a tarball of your build output (or of the source, when the output folder is unknown) with an SBOM and provenance. Their deploys come next.
 - `.github/workflows/pr-title.yml`, which requires Conventional Commit pull request titles (`feat: ...`, `fix(api): ...`), since squash merges turn them into the commit history releases are built from
 - `.github/dependabot.yml`, with weekly grouped updates held back 7 days after each release and titled as Conventional Commits
 - `.pre-commit-config.yaml`, which runs Gitleaks and your lint and format checks before each commit (skipped if you already use Husky or Lefthook)
-- starting points you own: `.editorconfig`, a pull request template and a CODEOWNERS stub. These are only created if missing and never overwritten.
+- starting points you own: `.editorconfig`, a pull request template and a CODEOWNERS stub. For Docker and VPS targets without a Dockerfile, also a starter `Dockerfile` (multi-stage, non-root, base image pinned by digest, start command detected for Django, FastAPI, Flask and `npm start`) and `.dockerignore`, and for VPS a `deploy/compose.yaml`. These are only created if missing and never overwritten.
 
 It never touches git and never overwrites a file it did not write (unless you pass `--force`), so you review the result with `git diff` and open the pull request yourself. Every action in the workflow is pinned to a commit SHA, every downloaded tool is checked against its published checksum, and each job gets only the permissions it needs.
 

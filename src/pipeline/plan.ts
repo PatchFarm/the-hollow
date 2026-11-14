@@ -12,6 +12,13 @@ import type {
 } from "../detect/types.js";
 import { TOOL_VERSIONS } from "../generate/pins.js";
 import { ProjectFiles } from "../util/project-files.js";
+import {
+  type ContainerStarter,
+  DEFAULT_APP_PORT,
+  type DeployPlan,
+  planDeploy,
+  planStarter,
+} from "./deploy.js";
 
 /**
  * The typed pipeline model: what CI runs for this project, worked out from detection plus the
@@ -36,6 +43,8 @@ export interface PipelinePlan {
   };
   /** How releases are cut and what they carry. Null until hollow.yml names a deploy target. */
   release: ReleasePlan | null;
+  /** How the release artifact reaches each environment. Null until a target M3 covers is chosen. */
+  deploy: DeployPlan | null;
   /** Another git hook manager the project already uses (Husky, Lefthook), or null. */
   existingHooks: string | null;
   /** Things the developer should know before merging the generated pipeline. */
@@ -55,6 +64,8 @@ export interface ImageArtifact {
   dockerfile: string;
   /** Image name under ghcr.io, or null for the repository name. */
   image: string | null;
+  /** Set when the project has no Dockerfile and `hollow init` writes a starter one. */
+  starter: ContainerStarter | null;
 }
 
 /** A tarball attached to the GitHub release. */
@@ -149,6 +160,7 @@ export function planPipeline(detection: Detection, config: HollowConfig | null):
     dockerfile: detection.container.dockerfile,
     existingHooks,
     release: null,
+    deploy: null,
     security: {
       failOn: config?.security.failOn ?? "high",
       sast: config?.security.sast ?? "auto",
@@ -169,8 +181,31 @@ export function planPipeline(detection: Detection, config: HollowConfig | null):
     }
     part = planPython(detection, files, packageManager, overrides.runtimeVersion, notes);
   }
-  const release = config === null ? null : planRelease(detection, files, config, part, notes);
-  return { status: "ok", plan: { ...base, ...part, release } };
+  const appPort =
+    config === null || (config.deploy.target !== "docker" && config.deploy.target !== "vps")
+      ? DEFAULT_APP_PORT[language]
+      : (config.deploy.appPort ?? DEFAULT_APP_PORT[language]);
+  const release =
+    config === null
+      ? null
+      : planRelease(detection, files, config, part, notes, {
+          language,
+          packageManager,
+          runtimeVersion: overrides.runtimeVersion ?? detection.runtimeVersion?.value,
+          appPort,
+        });
+  const image = release?.artifact.kind === "image" ? release.artifact : null;
+  const deploy = config === null || image === null ? null : planDeploy(config, appPort);
+  return {
+    status: "ok",
+    plan: {
+      ...base,
+      ...part,
+      dockerfile: image?.dockerfile ?? base.dockerfile,
+      release,
+      deploy,
+    },
+  };
 }
 
 function isNodePm(pm: PackageManager): pm is NodePackageManager {
@@ -463,6 +498,12 @@ function planRelease(
   config: HollowConfig,
   part: LanguagePart,
   notes: string[],
+  runtime: {
+    language: Language;
+    packageManager: PackageManager;
+    runtimeVersion: string | undefined;
+    appPort: number;
+  },
 ): ReleasePlan {
   const { deploy } = config;
   let releaseType: ReleasePlan["releaseType"] = "simple";
@@ -477,16 +518,32 @@ function planRelease(
     }
   }
 
-  let artifact: ReleasePlan["artifact"];
+  let artifact: ReleasePlan["artifact"] | null = null;
   const dockerfile = detection.container.dockerfile;
-  if ((deploy.target === "docker" || deploy.target === "vps") && dockerfile !== null) {
-    artifact = { kind: "image", dockerfile, image: deploy.image ?? null };
-  } else {
-    if (deploy.target === "docker" || deploy.target === "vps") {
-      notes.push(
-        `The ${deploy.target} target ships a container image, but there is no Dockerfile yet, so releases attach a source archive for now. Add a Dockerfile and run \`hollow upgrade\`.`,
-      );
+  const build = part.checks.find((check) => check.id === "build")?.run ?? null;
+  if (deploy.target === "docker" || deploy.target === "vps") {
+    if (dockerfile !== null) {
+      artifact = { kind: "image", dockerfile, image: deploy.image ?? null, starter: null };
+    } else {
+      const starter = planStarter({
+        detection,
+        files,
+        ...runtime,
+        install: part.install,
+        build,
+        notes,
+      });
+      if (starter !== null) {
+        artifact = {
+          kind: "image",
+          dockerfile: "Dockerfile",
+          image: deploy.image ?? null,
+          starter,
+        };
+      }
     }
+  }
+  if (artifact === null) {
     let outputDir: string | null = config.release.outputDir ?? null;
     let outputSource: string | null = outputDir === null ? null : "hollow.yml#release.outputDir";
     if (outputDir === null) {
@@ -502,7 +559,6 @@ function planRelease(
         }
       }
     }
-    const build = part.checks.find((check) => check.id === "build")?.run ?? null;
     if (outputDir !== null && build === null) {
       notes.push(
         `There is no build command, so releases cannot produce ${outputDir}. They attach a source archive instead.`,
