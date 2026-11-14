@@ -1,4 +1,5 @@
 import type { PipelinePlan, Service } from "../pipeline/plan.js";
+import { CVSS_FLOOR, SEVERITY_ORDER } from "../pipeline/severity.js";
 import { ACTIONS, BINARIES, type BinaryPin, IMAGES, TOOL_VERSIONS } from "./pins.js";
 import { renderGenerated } from "./render.js";
 
@@ -6,10 +7,6 @@ export const CI_WORKFLOW = ".github/workflows/ci.yml";
 
 type Step = Record<string, unknown>;
 type Job = Record<string, unknown>;
-
-const SEVERITY_ORDER = ["low", "medium", "high", "critical"] as const;
-/** CVSS base score where each severity starts. */
-const CVSS_FLOOR = { low: "0.1", medium: "4.0", high: "7.0", critical: "9.0" } as const;
 
 /**
  * `.github/workflows/ci.yml`: build, quality, tests and security scanning on every pull request

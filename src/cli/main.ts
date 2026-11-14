@@ -3,6 +3,7 @@ import { parseArgs } from "node:util";
 import { loadConfig } from "../config/load.js";
 import { detectProject } from "../detect/index.js";
 import { planPipeline } from "../pipeline/plan.js";
+import { CHECK_IDS, type CheckStepId, check } from "./check-command.js";
 import { formatPlan } from "./format.js";
 import { init, upgrade } from "./generate-command.js";
 import type { Ask } from "./interview.js";
@@ -17,7 +18,6 @@ export interface Io {
 
 /** Commands from docs/SCOPE.md that are planned but not built yet, with the milestone that ships them. */
 const PLANNED: Record<string, { milestone: string; summary: string }> = {
-  check: { milestone: "M1", summary: "Run the pipeline's CI checks locally" },
   secrets: { milestone: "M2", summary: "List and set the secrets each environment needs" },
   fix: { milestone: "M5", summary: "Repair the latest failed pipeline run" },
   doctor: {
@@ -35,6 +35,7 @@ Commands:
   plan        Show what The Hollow detects and the CI it would generate (read-only)
   init        Create hollow.yml and generate the CI workflow and Dependabot config
   upgrade     Regenerate the files The Hollow owns from hollow.yml
+  check       Run the CI checks on this machine, using the dependencies already installed
 ${Object.entries(PLANNED)
   .map(
     ([name, { milestone, summary }]) => `  ${name.padEnd(10)}  ${summary} (coming in ${milestone})`,
@@ -48,6 +49,8 @@ Options:
   --force            Replace existing files The Hollow did not write (init, upgrade)
   --target <name>    Deploy target: vercel, cloudflare-workers, cloudflare-pages, docker, vps (init)
   --yes              Accept every suggested answer without asking (init)
+  --install          Run the locked install CI uses before checking (check)
+  --only <ids>       Run only some checks, comma-separated: ${CHECK_IDS.join(", ")} (check)
   --no-ai            Never call a model. This release makes no AI calls, so it is the default.
   -h, --help         Show this help
   -v, --version
@@ -59,6 +62,7 @@ const COMMAND_OPTIONS: Record<string, readonly string[]> = {
   plan: ["json"],
   init: ["dry-run", "force", "target", "yes"],
   upgrade: ["dry-run", "force"],
+  check: ["install", "only"],
 };
 const GLOBAL_OPTIONS = ["cwd", "help", "version", "no-ai"];
 
@@ -112,6 +116,23 @@ export async function run(argv: readonly string[], io: Io): Promise<number> {
         ask: io.ask,
         ...output,
       });
+    case "check": {
+      const only = values.only
+        ?.split(",")
+        .map((id) => id.trim())
+        .filter(Boolean);
+      const unknown = only?.find((id) => !(CHECK_IDS as readonly string[]).includes(id));
+      if (unknown !== undefined || (only !== undefined && only.length === 0)) {
+        io.stderr(`--only takes a comma-separated list of: ${CHECK_IDS.join(", ")}.\n`);
+        return EXIT.usage;
+      }
+      return check({
+        dir,
+        install: values.install ?? false,
+        only: only as CheckStepId[] | undefined,
+        ...output,
+      });
+    }
     case "upgrade":
       return upgrade({
         dir,
@@ -144,6 +165,8 @@ function parse(argv: readonly string[]) {
       force: { type: "boolean" },
       target: { type: "string" },
       yes: { type: "boolean", short: "y" },
+      install: { type: "boolean" },
+      only: { type: "string" },
       "no-ai": { type: "boolean" },
       help: { type: "boolean", short: "h" },
       version: { type: "boolean", short: "v" },

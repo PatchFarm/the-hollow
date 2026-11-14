@@ -23,6 +23,7 @@ CI runs all of these on Node 22 and 24 for every pull request.
 - `src/config/`: the `hollow.yml` schema (zod) and loader
 - `src/pipeline/plan.ts`: the typed pipeline model (what CI runs for a project), built from detection plus `hollow.yml`
 - `src/generate/`: renders the model into workflow and config files. `pins.ts` holds every pinned action, binary and image
+- `src/cli/check-command.ts`: `hollow check`, which runs the model's checks locally through `src/util/exec.ts`
 - `src/util/project-files.ts` and `src/util/project-writer.ts`: the only way to read and write project files. They refuse paths and symlinks that leave the project root, so use them instead of `fs`
 - `test/fixtures/`: sample projects (see its README)
 - `test/golden/`: the reviewed output for each sample app. CI lints every golden workflow with actionlint

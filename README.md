@@ -41,6 +41,8 @@ node dist/cli.js plan --cwd /path/to/your/project
 
 It never touches git and never overwrites a file it did not write (unless you pass `--force`), so you review the result with `git diff` and open the pull request yourself. Every action in the workflow is pinned to a commit SHA, every downloaded tool is checked against its published checksum, and each job gets only the permissions it needs.
 
+`hollow check` runs the same checks on your machine before you push: your lint, format, type check, test and build steps, plus Gitleaks and OSV-Scanner if they are installed (with the same fail threshold as CI). It uses the dependencies you already have; add `--install` to run CI's locked install first, or `--only lint,test` to run some of them. It runs your project's own scripts, the same way `npm run` does.
+
 After you change `hollow.yml`, run `hollow upgrade` to regenerate the workflow. Both commands take `--dry-run`. If [actionlint](https://github.com/rhysd/actionlint) is installed, they check the workflow with it before writing anything.
 
 ## hollow.yml

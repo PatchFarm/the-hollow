@@ -36,9 +36,9 @@ describe("hollow CLI", () => {
   });
 
   it("says which milestone ships a planned command", async () => {
-    const result = await cli(["check"]);
+    const result = await cli(["secrets"]);
     expect(result.code).toBe(EXIT.failure);
-    expect(result.stderr).toContain("milestone M1");
+    expect(result.stderr).toContain("milestone M2");
   });
 
   it("plan prints a readable report", async () => {
