@@ -85,11 +85,16 @@ export function formatPlan(detection: Detection, config: LoadResult, pipeline: P
       row("Release", `release-please (${releaseType}); ${what}, with SBOM and provenance`);
     }
     if (plan.deploy !== null) {
+      const cloudflare = plan.deploy.cloudflare;
       const where = plan.deploy.vercel
         ? "staged Vercel production deployment, promoted on release; previews for same-repo PRs"
-        : plan.deploy.vps === null
-          ? "moves the environment's tag on GHCR"
-          : `Docker Compose on ${plan.deploy.vps.host} over SSH`;
+        : cloudflare?.kind === "workers"
+          ? "uploaded Worker version (Version URL), deployed to 100% on release"
+          : cloudflare?.kind === "pages"
+            ? `Pages project ${cloudflare.projectName}: staging branch, then the same build to production; previews for same-repo PRs`
+            : plan.deploy.vps === null
+              ? "moves the environment's tag on GHCR"
+              : `Docker Compose on ${plan.deploy.vps.host} over SSH`;
       const stages = plan.deploy.environments
         .map(
           (environment) =>

@@ -1,6 +1,7 @@
 import { DEPLOY_COMPOSE } from "../pipeline/deploy.js";
 import type { PipelinePlan } from "../pipeline/plan.js";
 import { CI_WORKFLOW, renderCiWorkflow } from "./ci.js";
+import { renderPagesPreview } from "./cloudflare.js";
 import { DEPENDABOT_CONFIG, renderDependabot } from "./dependabot.js";
 import {
   DOCKERFILE,
@@ -102,6 +103,15 @@ export function generateFiles(plan: PipelinePlan): GeneratedFile[] {
         workflow: false,
       },
     );
+  }
+  const cloudflare = plan.deploy?.cloudflare;
+  if (cloudflare?.kind === "pages") {
+    files.splice(3, 0, {
+      path: PREVIEW_WORKFLOW,
+      content: renderPagesPreview(plan, cloudflare),
+      kind: "generated",
+      workflow: true,
+    });
   }
   const vercel = plan.deploy?.vercel;
   if (vercel) {

@@ -241,6 +241,14 @@ function printNextSteps(plan: PipelinePlan, options: GenerateOptions): void {
       `Optional: turn on Protection Bypass for Automation in the Vercel project and add its value as the ${vercel.bypassSecret} secret, so health checks can reach protected deployment URLs. Without it, a protected URL only shows the deployment is reachable.`,
       "Staging is a production build that is not live yet, so it uses production's Vercel environment variables. Pull request previews use the Preview ones.",
     );
+  } else if (deploy?.cloudflare) {
+    const cf = deploy.cloudflare;
+    steps.push(
+      `Add a Cloudflare API token as the ${cf.tokenSecret} secret and your account ID as the ${cf.accountIdVariable} variable (Settings > Secrets and variables > Actions). The token needs ${cf.kind === "workers" ? "Workers Scripts: Edit" : "Cloudflare Pages: Edit"}.`,
+      cf.kind === "workers"
+        ? "Turn on Version URLs (preview_urls = true in the Wrangler config) so staging can be checked. Staging runs the production Worker's version, so it uses production's bindings and data, and its URL is public unless the Worker is behind Cloudflare Access."
+        : `Create the ${cf.projectName} Pages project with ${plan.defaultBranch} as its production branch. Staging deploys to its staging branch (staging.${cf.projectName}.pages.dev), which uses the project's preview variables.`,
+    );
   } else if (deploy !== null) {
     steps.push(
       "Every merge publishes the image and points its :staging tag at it; each release moves :production. Point whatever runs the container at those tags.",

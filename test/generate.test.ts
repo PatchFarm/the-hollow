@@ -291,12 +291,6 @@ describe("release workflow", () => {
     });
   });
 
-  it("only builds an archive when a release was created", () => {
-    expect(release("node-vite-static").jobs.artifact?.if).toBe(
-      expr("needs.release-please.outputs.released == 'true'"),
-    );
-  });
-
   it("builds the image once on every merge, with SBOM and provenance, for image targets", () => {
     const wf = release("python-fastapi");
     expect(wf.jobs.build?.if).toBeUndefined();
@@ -323,27 +317,35 @@ describe("release workflow", () => {
     expect(JSON.stringify(assets)).toContain("image-digest.txt");
   });
 
-  it("archives the build output for Vite on Cloudflare Pages", () => {
-    const wf = release("node-vite-static");
-    const text = JSON.stringify(wf.jobs.artifact);
-    expect(text).toContain("Package the build output (dist)");
-    expect(text).toContain("pnpm run build");
-    expect(wf.jobs.artifact?.permissions).not.toHaveProperty("packages");
-  });
-
-  it("archives the source when there is no known output folder", () => {
-    const text = JSON.stringify(release("node-hono-workers").jobs.artifact);
-    expect(text).toContain("Package the source at the tag");
-    expect(text).not.toContain("Install dependencies");
+  it("falls back to a release archive when Pages has no build output to deploy", () => {
+    const dir = tempProject({
+      "package.json": JSON.stringify({ name: "site" }),
+      "package-lock.json": "{}",
+    });
+    const config = hollowConfigSchema.parse({
+      version: 1,
+      deploy: { target: "cloudflare-pages", projectName: "site" },
+    });
+    const result = planPipeline(detectProject(dir), config);
+    if (result.status !== "ok") throw new Error(result.error);
+    expect(result.plan.deploy).toBeNull();
+    expect(result.plan.notes.join("\n")).toContain("Cloudflare Pages deploys need a build command");
+    const wf = parse(
+      generateFiles(result.plan).find((f) => f.path === RELEASE_WORKFLOW)?.content ?? "",
+    ) as Release;
+    expect(wf.jobs.artifact?.if).toBe(expr("needs.release-please.outputs.released == 'true'"));
+    expect(JSON.stringify(wf.jobs.artifact)).toContain("Package the source at the tag");
   });
 
   it("honours release.outputDir and release.tokenSecret", () => {
-    const wf = release("node-hono-workers", {
+    const wf = release("node-vite-static", {
       release: { outputDir: "public", tokenSecret: "BOT_TOKEN" },
     });
-    const text = JSON.stringify(wf);
-    expect(text).toContain("Package the source at the tag");
-    expect(text).toContain("secrets.BOT_TOKEN");
+    const deployStep = steps(wf, "deploy-staging").find((s) => s.id === "deploy") as
+      | { env?: Record<string, string> }
+      | undefined;
+    expect(deployStep?.env?.OUTPUT_DIR).toBe("public");
+    expect(JSON.stringify(wf)).toContain("secrets.BOT_TOKEN");
   });
 
   it("plans a starter Dockerfile for a VPS app without one, and builds that", () => {
