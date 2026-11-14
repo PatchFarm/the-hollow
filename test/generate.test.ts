@@ -162,7 +162,7 @@ describe("generated Dependabot config", () => {
   it.each([
     ["node-next-prisma", ["npm", "github-actions"]],
     ["python-fastapi", ["uv", "github-actions", "docker"]],
-    ["python-django", ["pip", "github-actions"]],
+    ["python-django", ["pip", "github-actions", "docker"]],
   ])("%s: covers %j", (name, ecosystems) => {
     expect(dependabot(name).updates.map((u) => u["package-ecosystem"])).toEqual(ecosystems);
   });
@@ -290,30 +290,36 @@ describe("release workflow", () => {
     });
   });
 
-  it("only builds the artifact when a release was created", () => {
-    expect(release("python-fastapi").jobs.artifact?.if).toBe(
+  it("only builds an archive when a release was created", () => {
+    expect(release("node-vite-static").jobs.artifact?.if).toBe(
       expr("needs.release-please.outputs.released == 'true'"),
     );
   });
 
-  it("publishes a container image by digest, with SBOM and provenance, for image targets", () => {
+  it("builds the image once on every merge, with SBOM and provenance, for image targets", () => {
     const wf = release("python-fastapi");
-    expect(wf.jobs.artifact?.permissions).toEqual({
-      contents: "write",
+    expect(wf.jobs.build?.if).toBeUndefined();
+    expect(wf.jobs.build?.permissions).toEqual({
+      contents: "read",
       packages: "write",
       "id-token": "write",
       attestations: "write",
     });
-    expect(uses(wf, "artifact")).toEqual([
+    expect(uses(wf, "build")).toEqual([
       ACTIONS.checkout.uses,
       ACTIONS.attest.uses,
       ACTIONS.attest.uses,
     ]);
-    const text = JSON.stringify(wf.jobs.artifact);
-    expect(text).toContain("docker push --all-tags");
+    const text = JSON.stringify(wf.jobs.build);
+    expect(text).toContain('--tag \\"$image:sha-$GITHUB_SHA\\"');
     expect(text).toContain(BINARIES.syft.sha256);
     expect(text).toContain('"push-to-registry":true');
-    expect(text).toContain("image-digest.txt");
+
+    const assets = wf.jobs["release-assets"];
+    expect(assets?.if).toBe(expr("needs.release-please.outputs.released == 'true'"));
+    expect(assets?.permissions).toEqual({ contents: "write", packages: "write" });
+    expect(JSON.stringify(assets)).toContain('imagetools create --tag \\"$IMAGE:$VERSION\\"');
+    expect(JSON.stringify(assets)).toContain("image-digest.txt");
   });
 
   it("archives the build output for Vite on Cloudflare Pages", () => {
@@ -339,11 +345,11 @@ describe("release workflow", () => {
     expect(text).toContain("secrets.BOT_TOKEN");
   });
 
-  it("falls back to a source archive for a VPS app without a Dockerfile, and says so", () => {
+  it("plans a starter Dockerfile for a VPS app without one, and builds that", () => {
     const plan = planFor("python-django");
-    expect(plan.release?.artifact).toMatchObject({ kind: "archive", outputDir: null });
+    expect(plan.release?.artifact).toMatchObject({ kind: "image", dockerfile: "Dockerfile" });
+    expect(plan.dockerfile).toBe("Dockerfile");
     expect(plan.release?.releaseType).toBe("simple");
-    expect(plan.notes.join("\n")).toContain("no Dockerfile yet");
   });
 
   it("passes release values to scripts through env, never inline", () => {

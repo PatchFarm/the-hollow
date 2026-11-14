@@ -100,10 +100,20 @@ const imageName = z
   .optional()
   .meta({ description: "Image name in the registry. Defaults to the GitHub repo name." });
 
+const appPort = z.int().min(1).max(65535).optional().meta({
+  description:
+    "Port the app listens on inside its container. Defaults to 3000 for Node and 8000 for Python.",
+});
+
+const variableName = z
+  .string()
+  .regex(/^[A-Z][A-Z0-9_]*$/, "must be the NAME of a GitHub Actions variable (UPPER_SNAKE_CASE)");
+
 const dockerTarget = z.strictObject({
   target: z.literal("docker"),
   registry: z.literal("ghcr.io").default("ghcr.io"),
   image: imageName,
+  appPort,
 });
 
 const vpsTarget = z.strictObject({
@@ -123,7 +133,12 @@ const vpsTarget = z.strictObject({
     .refine((value) => !value.split("/").includes(".."), "must not contain `..`")
     .default("/srv/app"),
   sshKeySecret: secretName.default("VPS_SSH_KEY"),
+  knownHostsVariable: variableName.default("VPS_KNOWN_HOSTS").meta({
+    description:
+      "GitHub Actions variable holding the server's SSH host key line (from `ssh-keyscan`), so deploys only talk to that server.",
+  }),
   image: imageName,
+  appPort,
 });
 
 export const deploySchema = z
@@ -162,6 +177,19 @@ export const protectionSchema = z
     }),
   })
   .meta({ description: "Branch rules that `hollow protect` applies to the default branch." });
+
+export const verifySchema = z
+  .strictObject({
+    healthPath: z
+      .string()
+      .regex(/^\/[A-Za-z0-9._~/?=&%-]*$/, "must be a path starting with /")
+      .default("/")
+      .meta({
+        description:
+          "Path checked after every deploy, on each environment's url. A failed check rolls the deploy back.",
+      }),
+  })
+  .meta({ description: "How each deploy is checked." });
 
 export const securitySchema = z.strictObject({
   failOn: z.enum(["critical", "high", "medium", "low"]).default("high").meta({
@@ -218,6 +246,7 @@ export const hollowConfigSchema = z
     deploy: deploySchema,
     release: releaseSchema.default({ tokenSecret: "RELEASE_PLEASE_TOKEN" }),
     protection: protectionSchema.default({ requiredApprovals: 0 }),
+    verify: verifySchema.default({ healthPath: "/" }),
     security: securitySchema.default({ failOn: "high", sast: "auto" }),
     database: databaseSchema.default({
       migrations: "auto",

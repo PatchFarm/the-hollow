@@ -25,6 +25,7 @@ describe("hollow.yml", () => {
       deploy: { target: "vercel", tokenSecret: "VERCEL_TOKEN" },
       release: { tokenSecret: "RELEASE_PLEASE_TOKEN" },
       protection: { requiredApprovals: 0 },
+      verify: { healthPath: "/" },
       security: { failOn: "high", sast: "auto" },
       database: { migrations: "auto", destructiveChangeLabel: "allow-destructive-migration" },
       notifications: { incidentIssues: true },
@@ -69,6 +70,7 @@ agent:
       port: 2222,
       path: "/srv/api",
       sshKeySecret: "VPS_SSH_KEY",
+      knownHostsVariable: "VPS_KNOWN_HOSTS",
     });
     expect(result.config.environments.preprod.enabled).toBe(true);
   });

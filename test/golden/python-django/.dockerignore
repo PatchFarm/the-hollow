@@ -1,0 +1,16 @@
+# Keeps the image small and secrets out of it. Created by The Hollow; edit freely.
+.git
+.github
+.env
+.env.*
+!.env.example
+__pycache__
+*.py[cod]
+.venv
+venv
+.pytest_cache
+.mypy_cache
+.ruff_cache
+Dockerfile
+.dockerignore
+deploy

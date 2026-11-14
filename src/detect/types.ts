@@ -47,6 +47,7 @@ export interface Detection {
     test: boolean;
     lint: boolean;
     typecheck: boolean;
+    start: boolean;
   };
   /** Things the developer should know about: ambiguities, missing lockfiles, unreadable files. */
   warnings: string[];
@@ -65,7 +66,7 @@ export function emptyDetection(root: string): Detection {
     database: { migrationTool: null, engines: [] },
     container: { dockerfile: null, compose: null },
     deployHints: [],
-    scripts: { build: false, test: false, lint: false, typecheck: false },
+    scripts: { build: false, test: false, lint: false, typecheck: false, start: false },
     warnings: [],
   };
 }

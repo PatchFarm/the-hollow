@@ -78,11 +78,33 @@ export function formatPlan(detection: Detection, config: LoadResult, pipeline: P
       const { artifact, releaseType } = plan.release;
       const what =
         artifact.kind === "image"
-          ? `container image on GHCR (${artifact.dockerfile})`
+          ? `container image on GHCR (${artifact.dockerfile}${artifact.starter === null ? "" : ", starter written by init"})`
           : artifact.outputDir === null
             ? "source archive at the tag"
             : `build output archive: ${artifact.outputDir} (${artifact.outputSource})`;
       row("Release", `release-please (${releaseType}); ${what}, with SBOM and provenance`);
+    }
+    if (plan.deploy !== null) {
+      const where =
+        plan.deploy.vps === null
+          ? "moves the environment's tag on GHCR"
+          : `Docker Compose on ${plan.deploy.vps.host} over SSH`;
+      const stages = plan.deploy.environments
+        .map(
+          (environment) =>
+            `${environment.name}${environment.onRelease ? " (on release)" : " (every merge)"}`,
+        )
+        .join(", ");
+      row("Deploy", `${stages}; ${where}`);
+      const checked = plan.deploy.environments.filter(
+        (environment) => environment.healthUrl !== null,
+      );
+      row(
+        "Checks",
+        checked.length === 0
+          ? "none yet: set environments.<name>.url in hollow.yml to check and roll back each deploy"
+          : checked.map((environment) => environment.healthUrl).join(", "),
+      );
     }
   } else if (detection.language !== null) {
     lines.push("", "CI pipeline", `  Cannot plan: ${pipeline.error}`);

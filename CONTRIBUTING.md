@@ -21,7 +21,7 @@ CI runs all of these on Node 22 and 24 for every pull request.
 - `src/cli/`: argument parsing and output
 - `src/detect/`: project detection, one file per language plus shared signals
 - `src/config/`: the `hollow.yml` schema (zod) and loader
-- `src/pipeline/plan.ts`: the typed pipeline model (what CI runs for a project), built from detection plus `hollow.yml`
+- `src/pipeline/plan.ts`: the typed pipeline model (what CI runs for a project), built from detection plus `hollow.yml`. `src/pipeline/deploy.ts` adds the deploy plan and the starter Dockerfile recipe
 - `src/generate/`: renders the model into files. `index.ts` lists them with their kind: `generated` (The Hollow owns and regenerates it), `generated-optional` (same, but a file the project already has is left alone) or `scaffold` (created once, then the developer's). `pins.ts` holds every pinned action, hook, binary and image
 - `src/cli/check-command.ts`: `hollow check`, which runs the model's checks locally through `src/util/exec.ts`
 - `src/cli/protect-command.ts` and `src/protect/plan.ts`: `hollow protect`. Planning only reads; every change sits in a step's `apply` until the developer confirms

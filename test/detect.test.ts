@@ -19,7 +19,13 @@ describe("sample apps", () => {
     expect(values(d.tests.e2e)).toEqual(["playwright"]);
     expect(d.database.migrationTool).toEqual({ value: "prisma", source: "prisma/schema.prisma" });
     expect(values(d.database.engines)).toEqual(["postgres"]);
-    expect(d.scripts).toEqual({ build: true, test: true, lint: true, typecheck: true });
+    expect(d.scripts).toEqual({
+      build: true,
+      test: true,
+      lint: true,
+      typecheck: true,
+      start: true,
+    });
     expect(d.deployHints).toEqual([]);
     expect(d.warnings).toEqual([]);
   });

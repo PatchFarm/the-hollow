@@ -203,6 +203,12 @@
               "description": "Image name in the registry. Defaults to the GitHub repo name.",
               "type": "string",
               "pattern": "^[a-z0-9]+(?:[._/-][a-z0-9]+)*$"
+            },
+            "appPort": {
+              "description": "Port the app listens on inside its container. Defaults to 3000 for Node and 8000 for Python.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
             }
           },
           "required": [
@@ -244,10 +250,22 @@
               "pattern": "^[A-Z][A-Z0-9_]*$",
               "description": "Name of a GitHub Actions secret. Never put secret values in hollow.yml."
             },
+            "knownHostsVariable": {
+              "default": "VPS_KNOWN_HOSTS",
+              "description": "GitHub Actions variable holding the server's SSH host key line (from `ssh-keyscan`), so deploys only talk to that server.",
+              "type": "string",
+              "pattern": "^[A-Z][A-Z0-9_]*$"
+            },
             "image": {
               "description": "Image name in the registry. Defaults to the GitHub repo name.",
               "type": "string",
               "pattern": "^[a-z0-9]+(?:[._/-][a-z0-9]+)*$"
+            },
+            "appPort": {
+              "description": "Port the app listens on inside its container. Defaults to 3000 for Node and 8000 for Python.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
             }
           },
           "required": [
@@ -296,6 +314,22 @@
       },
       "additionalProperties": false,
       "description": "Branch rules that `hollow protect` applies to the default branch."
+    },
+    "verify": {
+      "default": {
+        "healthPath": "/"
+      },
+      "type": "object",
+      "properties": {
+        "healthPath": {
+          "default": "/",
+          "description": "Path checked after every deploy, on each environment's url. A failed check rolls the deploy back.",
+          "type": "string",
+          "pattern": "^\\/[A-Za-z0-9._~/?=&%-]*$"
+        }
+      },
+      "additionalProperties": false,
+      "description": "How each deploy is checked."
     },
     "security": {
       "default": {

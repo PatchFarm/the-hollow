@@ -1,6 +1,14 @@
+import { DEPLOY_COMPOSE } from "../pipeline/deploy.js";
 import type { PipelinePlan } from "../pipeline/plan.js";
 import { CI_WORKFLOW, renderCiWorkflow } from "./ci.js";
 import { DEPENDABOT_CONFIG, renderDependabot } from "./dependabot.js";
+import {
+  DOCKERFILE,
+  DOCKERIGNORE,
+  renderDeployCompose,
+  renderDockerfile,
+  renderDockerignore,
+} from "./dockerfile.js";
 import { PR_TITLE_WORKFLOW, renderPrTitleWorkflow } from "./pr-title.js";
 import { PRE_COMMIT_CONFIG, renderPreCommit } from "./pre-commit.js";
 import { RELEASE_WORKFLOW, renderReleaseWorkflow } from "./release.js";
@@ -72,5 +80,30 @@ export function generateFiles(plan: PipelinePlan): GeneratedFile[] {
     { path: PR_TEMPLATE, content: renderPrTemplate(), kind: "scaffold", workflow: false },
     { path: CODEOWNERS, content: renderCodeowners(), kind: "scaffold", workflow: false },
   );
+  const artifact = plan.release?.artifact;
+  if (artifact?.kind === "image" && artifact.starter !== null) {
+    files.push(
+      {
+        path: DOCKERFILE,
+        content: renderDockerfile(artifact.starter),
+        kind: "scaffold",
+        workflow: false,
+      },
+      {
+        path: DOCKERIGNORE,
+        content: renderDockerignore(artifact.starter),
+        kind: "scaffold",
+        workflow: false,
+      },
+    );
+  }
+  if (plan.deploy?.vps) {
+    files.push({
+      path: DEPLOY_COMPOSE,
+      content: renderDeployCompose(plan.deploy, plan.language),
+      kind: "scaffold",
+      workflow: false,
+    });
+  }
   return files;
 }

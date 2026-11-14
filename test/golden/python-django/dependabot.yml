@@ -43,3 +43,20 @@ updates:
     exclude-paths:
       - .github/workflows/ci.yml
       - .github/workflows/release.yml
+  - package-ecosystem: docker
+    directory: /
+    commit-message:
+      prefix: build
+      include: scope
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    groups:
+      docker:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
