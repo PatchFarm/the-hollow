@@ -34,6 +34,8 @@ export interface PipelinePlan {
     sast: HollowConfig["security"]["sast"];
     codeqlLanguages: string[];
   };
+  /** Another git hook manager the project already uses (Husky, Lefthook), or null. */
+  existingHooks: string | null;
   /** Things the developer should know before merging the generated pipeline. */
   notes: string[];
 }
@@ -105,12 +107,19 @@ export function planPipeline(detection: Detection, config: HollowConfig | null):
   }
 
   const notes = [...detection.warnings];
+  const existingHooks = hookManager(files);
+  if (existingHooks !== null) {
+    notes.push(
+      `This project already uses ${existingHooks} for git hooks, so The Hollow does not add a pre-commit config.`,
+    );
+  }
   const base = {
     language,
     packageManager,
     defaultBranch: overrides.defaultBranch ?? "main",
     services: services(detection),
     dockerfile: detection.container.dockerfile,
+    existingHooks,
     security: {
       failOn: config?.security.failOn ?? "high",
       sast: config?.security.sast ?? "auto",
@@ -454,6 +463,14 @@ function services(detection: Detection): Service[] {
     result.push({ engine, env: free });
   }
   return result;
+}
+
+function hookManager(files: ProjectFiles): string | null {
+  if (files.exists(".husky")) return "Husky";
+  if (files.firstExisting(["lefthook.yml", "lefthook.yaml", ".lefthook.yml", ".lefthook.yaml"])) {
+    return "Lefthook";
+  }
+  return null;
 }
 
 function readManifest(files: ProjectFiles): Record<string, unknown> {

@@ -8,6 +8,9 @@ version: 2
 updates:
   - package-ecosystem: uv
     directory: /
+    commit-message:
+      prefix: build
+      include: scope
     schedule:
       interval: weekly
     cooldown:
@@ -22,6 +25,9 @@ updates:
           - patch
   - package-ecosystem: github-actions
     directory: /
+    commit-message:
+      prefix: ci
+      include: scope
     schedule:
       interval: weekly
     cooldown:
@@ -38,6 +44,9 @@ updates:
       - .github/workflows/ci.yml
   - package-ecosystem: docker
     directory: /
+    commit-message:
+      prefix: build
+      include: scope
     schedule:
       interval: weekly
     cooldown:

@@ -91,6 +91,22 @@ export const IMAGES = {
   },
 } as const satisfies Record<string, ImagePin>;
 
+export interface HookPin {
+  repo: string;
+  /** Full commit SHA of the release tag (pre-commit accepts SHAs as `rev`). */
+  rev: string;
+  version: string;
+}
+
+/** pre-commit hook repositories, pinned like actions. */
+export const HOOKS = {
+  gitleaks: {
+    repo: "https://github.com/gitleaks/gitleaks",
+    rev: "83d9cd684c87d95d656c1458ef04895a7f1cbd8e",
+    version: "v8.30.1",
+  },
+} as const satisfies Record<string, HookPin>;
+
 /** Package-manager versions installed when the project does not pin one itself. */
 export const TOOL_VERSIONS = {
   poetry: "2.5.1",
@@ -102,5 +118,6 @@ export function pinComments(): Map<string, string> {
   const comments = new Map<string, string>();
   for (const pin of Object.values(ACTIONS)) comments.set(pin.uses, pin.version);
   for (const pin of Object.values(IMAGES)) comments.set(pin.image, pin.version);
+  for (const pin of Object.values(HOOKS)) comments.set(pin.rev, `frozen: ${pin.version}`);
   return comments;
 }

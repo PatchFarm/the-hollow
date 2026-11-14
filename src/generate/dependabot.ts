@@ -10,9 +10,15 @@ export const DEPENDABOT_CONFIG = ".github/dependabot.yml";
  */
 export function renderDependabot(plan: PipelinePlan): string {
   const updates: Record<string, unknown>[] = [];
+  // Conventional Commit titles ("build(deps): bump ...") so Dependabot's PRs pass the PR title
+  // check and land in the changelog under the right heading.
   const entry = (ecosystem: string, extra: Record<string, unknown> = {}) => ({
     "package-ecosystem": ecosystem,
     directory: "/",
+    "commit-message": {
+      prefix: ecosystem === "github-actions" ? "ci" : "build",
+      include: "scope",
+    },
     schedule: { interval: "weekly" },
     cooldown: { "default-days": 7 },
     "open-pull-requests-limit": 5,
