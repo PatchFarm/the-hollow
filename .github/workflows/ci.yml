@@ -47,6 +47,7 @@ jobs:
           cp -R test/fixtures/node-hono-workers "$RUNNER_TEMP/smoke"
           node dist/cli.js init --yes --cwd "$RUNNER_TEMP/smoke"
           node dist/cli.js upgrade --cwd "$RUNNER_TEMP/smoke"
+          node dist/cli.js check --only lint,typecheck
 
   # The generated workflows never run here, so lint every golden file to prove they are valid.
   actionlint:
