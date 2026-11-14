@@ -22,7 +22,7 @@ export interface Io {
 
 /** Commands from docs/SCOPE.md that are planned but not built yet, with the milestone that ships them. */
 const PLANNED: Record<string, { milestone: string; summary: string }> = {
-  secrets: { milestone: "M2", summary: "List and set the secrets each environment needs" },
+  secrets: { milestone: "M3", summary: "List and set the secrets each environment needs" },
   fix: { milestone: "M5", summary: "Repair the latest failed pipeline run" },
   doctor: {
     milestone: "M6",
