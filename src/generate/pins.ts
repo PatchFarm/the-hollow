@@ -41,6 +41,12 @@ export const ACTIONS = {
   setupUv: action("astral-sh/setup-uv", "68559e99cc807c1eb7e9238fd43a15bba460eec2", "v10.3.3"),
   setupPnpm: action("pnpm/action-setup", "ea17c68df8912ef543352723c149a84f56e3d413", "v6.1.0"),
   setupBun: action("oven-sh/setup-bun", "0c5077e51419868618aeaa5fe8019c62421857d6", "v2.2.0"),
+  releasePlease: action(
+    "googleapis/release-please-action",
+    "45996ed1f6d02564a971a2fa1b5860e934307cf7",
+    "v5.0.0",
+  ),
+  attest: action("actions/attest", "1e69f48acb82d1966a394da916b4c1698aa569d6", "v4.2.2"),
   codeqlInit: action(
     "github/codeql-action/init",
     "9b3254085494b55a0f7c4c2b3d2d52cc712ce370",
@@ -63,6 +69,11 @@ export const BINARIES = {
     version: "2.7.0",
     url: "https://github.com/google/osv-scanner/releases/download/v2.7.0/osv-scanner_linux_amd64",
     sha256: "160c6253e2922e9e0a6a9771c5c4c40a4b3c6090b34a3cdd5e80c96cc2e4218b",
+  },
+  syft: {
+    version: "1.55.0",
+    url: "https://github.com/anchore/syft/releases/download/v1.55.0/syft_1.55.0_linux_amd64.tar.gz",
+    sha256: "bb65249542db5fedeeb4d3f9b018b75e7264dbfbbb10486f044581a92f90490d",
   },
   trivy: {
     version: "0.76.1",

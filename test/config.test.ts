@@ -23,6 +23,7 @@ describe("hollow.yml", () => {
         production: { approvers: [] },
       },
       deploy: { target: "vercel", tokenSecret: "VERCEL_TOKEN" },
+      release: { tokenSecret: "RELEASE_PLEASE_TOKEN" },
       security: { failOn: "high", sast: "auto" },
       database: { migrations: "auto", destructiveChangeLabel: "allow-destructive-migration" },
       notifications: { incidentIssues: true },

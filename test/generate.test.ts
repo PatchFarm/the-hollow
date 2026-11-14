@@ -6,6 +6,7 @@ import { detectProject } from "../src/detect/index.js";
 import { generateFiles } from "../src/generate/index.js";
 import { ACTIONS, BINARIES, HOOKS, IMAGES } from "../src/generate/pins.js";
 import { PR_TITLE_WORKFLOW, TITLE_PATTERN } from "../src/generate/pr-title.js";
+import { RELEASE_WORKFLOW } from "../src/generate/release.js";
 import { expr, isGenerated } from "../src/generate/render.js";
 import { type PipelinePlan, planPipeline } from "../src/pipeline/plan.js";
 import { fixture, tempProject } from "./helpers.js";
@@ -116,7 +117,7 @@ describe("generated CI workflow", () => {
 
   it("checks every downloaded binary against its checksum", () => {
     const content = generateFiles(planFor("python-fastapi"))[0]?.content ?? "";
-    for (const pin of Object.values(BINARIES)) {
+    for (const pin of [BINARIES.gitleaks, BINARIES.osvScanner, BINARIES.trivy]) {
       expect(content).toContain(pin.url);
       expect(content).toContain(pin.sha256);
     }
@@ -170,7 +171,10 @@ describe("generated Dependabot config", () => {
     const { updates } = dependabot("node-next-prisma");
     for (const update of updates) expect(update.cooldown).toEqual({ "default-days": 7 });
     const actions = updates.find((u) => u["package-ecosystem"] === "github-actions");
-    expect(actions?.["exclude-paths"]).toEqual([".github/workflows/ci.yml"]);
+    expect(actions?.["exclude-paths"]).toEqual([
+      ".github/workflows/ci.yml",
+      ".github/workflows/release.yml",
+    ]);
   });
 
   it("titles its pull requests as Conventional Commits", () => {
@@ -259,5 +263,96 @@ describe("starting-point files", () => {
   it("ships a CODEOWNERS stub that assigns nobody until edited", () => {
     const lines = fileFor("node-hono-workers", ".github/CODEOWNERS").split("\n");
     expect(lines.every((line) => line === "" || line.startsWith("#"))).toBe(true);
+  });
+});
+
+describe("release workflow", () => {
+  type Release = Workflow & {
+    on: unknown;
+    jobs: Record<string, Workflow["jobs"][string] & { if?: string; with?: unknown }>;
+  };
+  const release = (name: string, extra: Partial<HollowConfigInput> = {}) =>
+    parse(
+      generateFiles(planFor(name, extra)).find((f) => f.path === RELEASE_WORKFLOW)?.content ?? "",
+    ) as Release;
+  const steps = (wf: Release, job: string) => wf.jobs[job]?.steps ?? [];
+  const uses = (wf: Release, job: string) =>
+    steps(wf, job)
+      .map((s) => s.uses)
+      .filter(Boolean);
+
+  it("runs release-please on pushes to the default branch, with the token secret as an option", () => {
+    const wf = release("node-next-prisma");
+    expect(wf.on).toEqual({ push: { branches: ["main"] } });
+    expect(steps(wf, "release-please")[0]).toMatchObject({
+      uses: ACTIONS.releasePlease.uses,
+      with: { "release-type": "node", token: expr("secrets.RELEASE_PLEASE_TOKEN || github.token") },
+    });
+  });
+
+  it("only builds the artifact when a release was created", () => {
+    expect(release("python-fastapi").jobs.artifact?.if).toBe(
+      expr("needs.release-please.outputs.released == 'true'"),
+    );
+  });
+
+  it("publishes a container image by digest, with SBOM and provenance, for image targets", () => {
+    const wf = release("python-fastapi");
+    expect(wf.jobs.artifact?.permissions).toEqual({
+      contents: "write",
+      packages: "write",
+      "id-token": "write",
+      attestations: "write",
+    });
+    expect(uses(wf, "artifact")).toEqual([
+      ACTIONS.checkout.uses,
+      ACTIONS.attest.uses,
+      ACTIONS.attest.uses,
+    ]);
+    const text = JSON.stringify(wf.jobs.artifact);
+    expect(text).toContain("docker push --all-tags");
+    expect(text).toContain(BINARIES.syft.sha256);
+    expect(text).toContain('"push-to-registry":true');
+    expect(text).toContain("image-digest.txt");
+  });
+
+  it("archives the build output for Vite on Cloudflare Pages", () => {
+    const wf = release("node-vite-static");
+    const text = JSON.stringify(wf.jobs.artifact);
+    expect(text).toContain("Package the build output (dist)");
+    expect(text).toContain("pnpm run build");
+    expect(wf.jobs.artifact?.permissions).not.toHaveProperty("packages");
+  });
+
+  it("archives the source when there is no known output folder", () => {
+    const text = JSON.stringify(release("node-hono-workers").jobs.artifact);
+    expect(text).toContain("Package the source at the tag");
+    expect(text).not.toContain("Install dependencies");
+  });
+
+  it("honours release.outputDir and release.tokenSecret", () => {
+    const wf = release("node-hono-workers", {
+      release: { outputDir: "public", tokenSecret: "BOT_TOKEN" },
+    });
+    const text = JSON.stringify(wf);
+    expect(text).toContain("Package the source at the tag");
+    expect(text).toContain("secrets.BOT_TOKEN");
+  });
+
+  it("falls back to a source archive for a VPS app without a Dockerfile, and says so", () => {
+    const plan = planFor("python-django");
+    expect(plan.release?.artifact).toMatchObject({ kind: "archive", outputDir: null });
+    expect(plan.release?.releaseType).toBe("simple");
+    expect(plan.notes.join("\n")).toContain("no Dockerfile yet");
+  });
+
+  it("passes release values to scripts through env, never inline", () => {
+    for (const name of Object.keys(SAMPLES)) {
+      for (const job of Object.values(release(name).jobs)) {
+        for (const step of job.steps) {
+          if (typeof step.run === "string") expect(step.run).not.toContain("${{");
+        }
+      }
+    }
   });
 });

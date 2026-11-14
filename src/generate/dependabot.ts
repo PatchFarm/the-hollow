@@ -1,5 +1,6 @@
 import type { PipelinePlan } from "../pipeline/plan.js";
 import { CI_WORKFLOW } from "./ci.js";
+import { RELEASE_WORKFLOW } from "./release.js";
 import { renderGenerated } from "./render.js";
 
 export const DEPENDABOT_CONFIG = ".github/dependabot.yml";
@@ -27,9 +28,13 @@ export function renderDependabot(plan: PipelinePlan): string {
   });
 
   updates.push(entry(appEcosystem(plan)));
-  // The Hollow owns the pins in its own workflow; `hollow upgrade` updates them, so Dependabot
-  // leaves that file alone and still covers every other workflow.
-  updates.push(entry("github-actions", { "exclude-paths": [CI_WORKFLOW] }));
+  // The Hollow owns the pins in its own workflows; `hollow upgrade` updates them, so Dependabot
+  // leaves those files alone and still covers every other workflow.
+  updates.push(
+    entry("github-actions", {
+      "exclude-paths": plan.release === null ? [CI_WORKFLOW] : [CI_WORKFLOW, RELEASE_WORKFLOW],
+    }),
+  );
   if (plan.dockerfile !== null) updates.push(entry("docker"));
 
   return renderGenerated(
@@ -37,7 +42,7 @@ export function renderDependabot(plan: PipelinePlan): string {
     {
       about: [
         "Weekly grouped updates. Each release waits 7 days before Dependabot proposes it.",
-        `${CI_WORKFLOW} is excluded: its pins change through \`hollow upgrade\`.`,
+        "The Hollow's own workflows are excluded: their pins change through `hollow upgrade`.",
       ],
     },
   );

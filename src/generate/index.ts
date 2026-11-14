@@ -3,6 +3,7 @@ import { CI_WORKFLOW, renderCiWorkflow } from "./ci.js";
 import { DEPENDABOT_CONFIG, renderDependabot } from "./dependabot.js";
 import { PR_TITLE_WORKFLOW, renderPrTitleWorkflow } from "./pr-title.js";
 import { PRE_COMMIT_CONFIG, renderPreCommit } from "./pre-commit.js";
+import { RELEASE_WORKFLOW, renderReleaseWorkflow } from "./release.js";
 import {
   CODEOWNERS,
   EDITORCONFIG,
@@ -41,6 +42,16 @@ export function generateFiles(plan: PipelinePlan): GeneratedFile[] {
       kind: "generated",
       workflow: true,
     },
+    ...(plan.release === null
+      ? []
+      : [
+          {
+            path: RELEASE_WORKFLOW,
+            content: renderReleaseWorkflow(plan, plan.release),
+            kind: "generated" as const,
+            workflow: true,
+          },
+        ]),
     {
       path: DEPENDABOT_CONFIG,
       content: renderDependabot(plan),

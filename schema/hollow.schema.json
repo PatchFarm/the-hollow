@@ -251,6 +251,27 @@
       ],
       "description": "Where the app is deployed."
     },
+    "release": {
+      "default": {
+        "tokenSecret": "RELEASE_PLEASE_TOKEN"
+      },
+      "type": "object",
+      "properties": {
+        "tokenSecret": {
+          "default": "RELEASE_PLEASE_TOKEN",
+          "description": "Secret with a token release-please uses, so its release pull requests run CI. Falls back to the workflow's own token when the secret is not set.",
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]*$"
+        },
+        "outputDir": {
+          "description": "Build output folder to attach to each release for targets without a container image. Detected for Vite, Astro, Next.js, Nuxt and Cloudflare Pages.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._][A-Za-z0-9._/-]*$"
+        }
+      },
+      "additionalProperties": false,
+      "description": "How releases are versioned and what each release carries."
+    },
     "security": {
       "default": {
         "failOn": "high",

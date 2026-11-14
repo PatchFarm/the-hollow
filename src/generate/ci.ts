@@ -60,8 +60,9 @@ export function renderCiWorkflow(plan: PipelinePlan): string {
   });
 }
 
-function checkout(options: { fetchDepth?: number } = {}): Step {
+export function checkout(options: { fetchDepth?: number; ref?: string } = {}): Step {
   const withInputs: Record<string, unknown> = { "persist-credentials": false };
+  if (options.ref !== undefined) withInputs.ref = options.ref;
   if (options.fetchDepth !== undefined) withInputs["fetch-depth"] = options.fetchDepth;
   return { uses: ACTIONS.checkout.uses, with: withInputs };
 }
@@ -85,7 +86,7 @@ function buildJob(plan: PipelinePlan): Job {
   return job;
 }
 
-function setupSteps(plan: PipelinePlan): Step[] {
+export function setupSteps(plan: PipelinePlan): Step[] {
   const tc = plan.toolchain;
   const steps: Step[] = [];
   if (tc.kind === "node") {
@@ -160,7 +161,7 @@ function health(command: string): string {
 }
 
 /** Steps that download a pinned binary and refuse to continue if its checksum does not match. */
-function installBinary(name: string, label: string, pin: BinaryPin, archive: boolean): Step {
+export function installBinary(name: string, label: string, pin: BinaryPin, archive: boolean): Step {
   const file = archive ? `$RUNNER_TEMP/${name}.tar.gz` : `$RUNNER_TEMP/${name}`;
   const script = [
     `curl --fail --silent --show-error --location --retry 3 --output "${file}" "$URL"`,
@@ -343,6 +344,6 @@ function summaryJob(needs: string[]): Job {
 }
 
 /** Join shell lines into one `run:` block. A single line stays inline. */
-function lines(parts: readonly string[]): string {
+export function lines(parts: readonly string[]): string {
   return parts.length === 1 ? (parts[0] ?? "") : `${parts.join("\n")}\n`;
 }

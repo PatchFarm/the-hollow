@@ -184,3 +184,67 @@ describe("pipeline plan: edge cases", () => {
     expect(planPipeline(detectProject(fixture("empty")), null).status).toBe("error");
   });
 });
+
+describe("release plan", () => {
+  const releaseOf = (
+    dir: string,
+    deploy: Record<string, unknown>,
+    release: Record<string, unknown> = {},
+  ) => {
+    const config = hollowConfigSchema.parse({ version: 1, deploy, release });
+    const result = planPipeline(detectProject(dir), config);
+    if (result.status !== "ok") throw new Error(result.error);
+    return result.plan.release;
+  };
+
+  it("is absent until hollow.yml names a deploy target", () => {
+    const result = planPipeline(detectProject(fixture("node-next-prisma")), null);
+    expect(result.status === "ok" && result.plan.release).toBe(null);
+  });
+
+  it("reads the Pages output folder from wrangler.toml", () => {
+    const dir = tempProject({
+      "package.json": JSON.stringify({ scripts: { build: "vite build" } }),
+      "package-lock.json": "{}",
+      "wrangler.toml": 'name = "site"\npages_build_output_dir = "./public"\n',
+    });
+    expect(releaseOf(dir, { target: "cloudflare-pages", projectName: "site" })?.artifact).toEqual({
+      kind: "archive",
+      outputDir: "public",
+      outputSource: "wrangler.toml#pages_build_output_dir",
+      build: "npm run build",
+    });
+  });
+
+  it("uses the Next.js output folder", () => {
+    expect(releaseOf(fixture("node-next-prisma"), { target: "vercel" })?.artifact).toMatchObject({
+      outputDir: ".next",
+      outputSource: "next default",
+    });
+  });
+
+  it("archives the source when there is an output folder but no build command", () => {
+    const dir = tempProject({
+      "package.json": JSON.stringify({ devDependencies: { vite: "8" } }),
+      "package-lock.json": "{}",
+    });
+    expect(releaseOf(dir, { target: "vercel" })?.artifact).toMatchObject({
+      outputDir: null,
+      build: null,
+    });
+  });
+
+  it("versions Python projects with a [project] version through pyproject.toml", () => {
+    expect(releaseOf(fixture("python-fastapi"), { target: "docker" })?.releaseType).toBe("python");
+  });
+
+  it("rejects an output folder that leaves the project", () => {
+    expect(() =>
+      hollowConfigSchema.parse({
+        version: 1,
+        deploy: { target: "vercel" },
+        release: { outputDir: "../x" },
+      }),
+    ).toThrow();
+  });
+});

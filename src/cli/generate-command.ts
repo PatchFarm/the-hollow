@@ -214,19 +214,21 @@ function printNotes(plan: PipelinePlan, options: GenerateOptions): void {
 
 function printNextSteps(plan: PipelinePlan, options: GenerateOptions): void {
   printNotes(plan, options);
-  options.stdout(
-    [
-      "",
-      "Next steps",
-      "  1. Review the new files (git status, git diff).",
-      '  2. Commit them on a branch and open a pull request with a Conventional Commit title, such as "ci: add The Hollow pipeline". The pipeline runs on that pull request.',
-      `  3. Once it passes, require the "CI passed" and "Conventional Commit title" checks in branch protection for ${plan.defaultBranch}.`,
-      ...(plan.existingHooks === null
-        ? [
-            "  4. Turn on the git hooks in each clone: pipx install pre-commit && pre-commit install",
-          ]
-        : []),
-      "",
-    ].join("\n"),
-  );
+  const steps = [
+    "Review the new files (git status, git diff).",
+    'Commit them on a branch and open a pull request with a Conventional Commit title, such as "ci: add The Hollow pipeline". The pipeline runs on that pull request.',
+    `Once it passes, require the "CI passed" and "Conventional Commit title" checks in branch protection for ${plan.defaultBranch}.`,
+  ];
+  if (plan.existingHooks === null) {
+    steps.push(
+      "Turn on the git hooks in each clone: pipx install pre-commit && pre-commit install",
+    );
+  }
+  if (plan.release !== null) {
+    steps.push(
+      "Let GitHub Actions create pull requests (Settings > Actions > General), so release-please can open its release PR.",
+      `Optional: add a fine-grained token with Contents and Pull requests write access as the ${plan.release.tokenSecret} secret, so CI also runs on release PRs.`,
+    );
+  }
+  options.stdout(`\nNext steps\n${steps.map((step, i) => `  ${i + 1}. ${step}`).join("\n")}\n`);
 }
