@@ -23,8 +23,11 @@ export function actionlint(
     timeout: 60_000,
     shell: false,
   });
-  if (result.error !== undefined) {
-    if ((result.error as NodeJS.ErrnoException).code === "ENOENT") return { status: "unavailable" };
+  const code = (result.error as NodeJS.ErrnoException | undefined)?.code;
+  if (code === "ENOENT") return { status: "unavailable" };
+  // EPIPE only means actionlint exited before reading all of stdin (it stops early on some
+  // errors). Its exit status and output still say what happened, so report those.
+  if (result.error !== undefined && (code !== "EPIPE" || result.status === null)) {
     return { status: "failed", output: result.error.message };
   }
   if (result.status === 0) return { status: "ok" };
