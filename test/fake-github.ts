@@ -45,6 +45,25 @@ export interface FakeState {
   envVariables: Record<string, string[]>;
   /** Force a response for `METHOD path` (path without the query string). */
   refuse: Record<string, { status: number; message: string }>;
+  /** Workflow runs. Each listing moves a run one state along its `states`, then it stays put. */
+  runs: FakeRun[];
+  pulls: { number: number; head: string; base: string; title: string; body: string }[];
+}
+
+export interface FakeJob {
+  id: number;
+  name: string;
+  conclusion: string;
+  steps: { name: string; conclusion: string }[];
+  log: string;
+}
+
+export interface FakeRun {
+  id: number;
+  name: string;
+  head_sha: string;
+  states: { status: string; conclusion: string | null }[];
+  jobs: FakeJob[];
 }
 
 export interface Request {
@@ -92,6 +111,8 @@ export function fakeState(overrides: Partial<FakeState> = {}): FakeState {
     envSecrets: {},
     envVariables: {},
     refuse: {},
+    runs: [],
+    pulls: [],
     ...overrides,
   };
 }
@@ -117,6 +138,22 @@ export class FakeGitHub implements GitHubApi {
     const forced = this.state.refuse[`${method} ${bare}`];
     if (forced !== undefined) return { status: forced.status, data: { message: forced.message } };
     return this.route(method, bare, path, body as Json | undefined);
+  }
+
+  private readonly polls = new Map<number, number>();
+
+  /** The run as GitHub would show it now, moving it one state along for next time. */
+  private advance(run: FakeRun): Json {
+    const index = this.polls.get(run.id) ?? 0;
+    this.polls.set(run.id, Math.min(index + 1, run.states.length - 1));
+    const state = run.states[index] ?? run.states[run.states.length - 1];
+    return {
+      id: run.id,
+      name: run.name,
+      status: state?.status,
+      conclusion: state?.conclusion,
+      html_url: `https://github.com/${this.state.owner}/${this.state.name}/actions/runs/${run.id}`,
+    };
   }
 
   private get freePrivate(): boolean {
@@ -298,6 +335,67 @@ export class FakeGitHub implements GitHubApi {
       if (!s.alerts) return json({ message: "Vulnerability alerts are disabled." }, 422);
       s.fixes = true;
       return json(null, 204);
+    }
+    if (method === "GET" && rest === "/actions/runs") {
+      const sha = new URL(full, "https://x").searchParams.get("head_sha");
+      // "*" stands for whatever commit the test made, which it cannot know in advance.
+      const matching = s.runs.filter((run) => run.head_sha === sha || run.head_sha === "*");
+      return json({
+        total_count: matching.length,
+        workflow_runs: matching.map((run) => this.advance(run)),
+      });
+    }
+    const runPath = /^\/actions\/runs\/(\d+)(\/jobs)?$/.exec(rest);
+    if (method === "GET" && runPath) {
+      const run = s.runs.find((r) => r.id === Number(runPath[1]));
+      if (run === undefined) return notFound;
+      if (runPath[2] === undefined) return json(this.advance(run));
+      return json({
+        total_count: run.jobs.length,
+        jobs: run.jobs.map((job) => ({
+          id: job.id,
+          name: job.name,
+          status: "completed",
+          conclusion: job.conclusion,
+          html_url: `https://github.com/${s.owner}/${s.name}/actions/runs/${run.id}/job/${job.id}`,
+          steps: job.steps.map((step, index) => ({
+            ...step,
+            number: index + 1,
+            status: "completed",
+          })),
+        })),
+      });
+    }
+    const logPath = /^\/actions\/jobs\/(\d+)\/logs$/.exec(rest);
+    if (method === "GET" && logPath) {
+      const job = s.runs.flatMap((run) => run.jobs).find((j) => j.id === Number(logPath[1]));
+      return job === undefined ? notFound : json(job.log);
+    }
+    if (rest === "/pulls" && method === "GET") {
+      const params = new URL(full, "https://x").searchParams;
+      const head = params.get("head")?.split(":")[1];
+      return json(
+        s.pulls
+          .filter((pull) => pull.head === head)
+          .map((pull) => ({
+            ...pull,
+            html_url: `https://github.com/${s.owner}/${s.name}/pull/${pull.number}`,
+          })),
+      );
+    }
+    if (rest === "/pulls" && method === "POST" && body) {
+      const pull = {
+        number: this.nextId++,
+        head: String(body.head),
+        base: String(body.base),
+        title: String(body.title),
+        body: String(body.body),
+      };
+      s.pulls.push(pull);
+      return json(
+        { ...pull, html_url: `https://github.com/${s.owner}/${s.name}/pull/${pull.number}` },
+        201,
+      );
     }
     if (rest === "/private-vulnerability-reporting") {
       if (method === "GET") return json({ enabled: s.reporting });
