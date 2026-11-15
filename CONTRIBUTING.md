@@ -45,6 +45,18 @@ CI runs all of these on Node 22 and 24 for every pull request.
 
 **Dependencies:** runtime dependencies are kept to a minimum (currently `zod`, `yaml` and `smol-toml`, none of which pull in further packages). A PR that adds one should say why the standard library is not enough.
 
+## Releasing
+
+Releases come from the Conventional Commit titles that land on `main`, through [release-please](https://github.com/googleapis/release-please) in `.github/workflows/release.yml`. It keeps a release pull request open with the changelog. Merging that pull request tags `vX.Y.Z`, creates the GitHub release, and runs the `Publish to npm` job. That job builds and tests the tag, then publishes `the-hollow` through npm trusted publishing: npm trusts the workflow's OIDC token in the `npm` environment, so no npm token is stored anywhere, and npm attaches provenance linking the package to the commit and run. Until 1.0, a `feat` bumps the minor version.
+
+The `RELEASE_PLEASE_TOKEN` repo secret (a fine-grained token with Contents and Pull requests write on this repo only) opens the release pull request, so CI runs on it; `main` requires CI to pass. Without it, close and reopen the release pull request to run CI.
+
+One-time npm setup, done once by a maintainer. npm only accepts a trusted publisher for a package that already exists, so the name is claimed with a placeholder first:
+
+1. Publish a `0.0.0` placeholder from your own machine with 2FA (a README and a `package.json` with `"name": "the-hollow"` and `"version": "0.0.0"`).
+2. On npmjs.com, open `the-hollow` > Settings > Trusted publishing and add GitHub Actions: organization `PatchFarm`, repository `the-hollow`, workflow `release.yml`, environment `npm`. The first publish through it must happen within 2 days, so do this right before merging the first release pull request.
+3. After the first release, set Settings > Publishing access to "Require two-factor authentication and disallow tokens", and deprecate the placeholder: `npm deprecate the-hollow@0.0.0 "Placeholder. Use the latest version."`
+
 ## Rules for this repo
 
 **Templates and generated pipelines**
