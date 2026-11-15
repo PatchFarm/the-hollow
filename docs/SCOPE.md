@@ -16,7 +16,7 @@ hollow does this by reading a repository, working out what it needs, and generat
 
 **hollow is not** a CI service, a hosting platform, or an observability product. Where the brief calls for things like logging, metrics or incident tooling, hollow **wires the pipeline into** those systems (health checks, alerts, deploy markers, rollback). It does not build them.
 
-**Class:** AI agent, shipped as a command line tool. Fixed, coded logic handles detection and the common cases with no AI calls. The model (Claude, bring your own API key) is used only to fill gaps and to repair failing runs. `--no-ai` runs the fixed logic alone.
+**Class:** AI agent, shipped as a command line tool. Fixed, coded logic handles detection and the common cases with no AI calls. A model is used only to fill gaps and to repair failing runs. hollow is provider-agnostic: the developer picks the provider, model and endpoint in `hollow.yml` and brings their own API key, through either the OpenAI-compatible Chat Completions API (which covers most hosted providers and local models) or Anthropic's Messages API. There is no default model. `--no-ai`, or no model configured, runs the fixed logic alone. (Decided 2026-11-15; the first draft named Claude.)
 
 ## 3. Decisions already made
 
@@ -28,6 +28,7 @@ hollow does this by reading a repository, working out what it needs, and generat
 | Project types at launch | Node/TypeScript and Python |
 | How people run it | `npx`, written in TypeScript on Node |
 | Environments | `staging` and `production` by default, `preprod` opt-in |
+| Model provider | Any, configured by the developer with their own key: OpenAI-compatible or Anthropic API, no default model. The spend cap uses prices set in `hollow.yml`, or a token budget without them |
 | Delivery | Always a pull request, never a direct push to `main` |
 | License | Apache-2.0 |
 | Standards | PatchFarm engineering standards, contribution guide and security policy (in `PatchFarm/.github`), plus this repo's `SECURITY.md` threat model and `CONTRIBUTING.md` rules |
@@ -201,7 +202,7 @@ hollow init
 | M2 Release | Versioning, artifacts, SBOM, provenance, environments, approval gate, branch protection |
 | M3 Deploy | Vercel, Cloudflare, Docker, VPS: staging, preprod, production, verification, rollback |
 | M4 Database | Migration detection, CI migration test, destructive change check, deploy ordering |
-| M5 Agent | Run, read logs, repair loop, PR creation, guardrails and spend caps |
+| M5 Agent | Run, read logs, repair loop, PR creation, guardrails and spend caps. Three PRs: guardrails (policy linter, log redaction, edit allowlist); run and read through `hollow fix` (branch, PR, watch, redacted logs, diagnosis without AI); the AI repair loop with caps, ending in a draft PR with findings when it cannot get a run to pass |
 | M6 Operate | Synthetic checks, alerts, incident issues, `doctor`, docs and example repos, first npm release |
 
 ## 12. Definition of done for v1

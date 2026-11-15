@@ -8,6 +8,7 @@ import { type PipelinePlan, planPipeline } from "../pipeline/plan.js";
 import { ProjectFiles } from "../util/project-files.js";
 import { writeProjectFile } from "../util/project-writer.js";
 import { actionlint } from "../verify/actionlint.js";
+import { checkWorkflow, formatViolations } from "../verify/policy.js";
 import { type Ask, interview } from "./interview.js";
 
 export interface GenerateOptions {
@@ -176,6 +177,18 @@ function apply(root: string, files: GeneratedFile[], options: GenerateOptions): 
         )}\nMove them aside (or merge what you need into hollow.yml), or run again with --force to replace them.\nNothing was written.\n`,
     );
     return 1;
+  }
+
+  // The policy runs first and needs nothing installed: every workflow The Hollow writes must pass.
+  for (const file of files) {
+    if (!file.workflow) continue;
+    const violations = checkWorkflow(file.content);
+    if (violations.length > 0) {
+      options.stderr(
+        `The generated ${file.path} breaks The Hollow's workflow policy. This is a bug in The Hollow, please report it at https://github.com/PatchFarm/the-hollow/issues\n\n${formatViolations(file.path, violations)}\n\nNothing was written.\n`,
+      );
+      return 1;
+    }
   }
 
   let lintSkipped = false;
