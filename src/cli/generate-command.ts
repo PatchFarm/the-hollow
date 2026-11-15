@@ -229,7 +229,7 @@ function printNextSteps(plan: PipelinePlan, options: GenerateOptions): void {
   printNotes(plan, options);
   const steps = [
     "Review the new files (git status, git diff).",
-    'Commit them on a branch and open a pull request with a Conventional Commit title, such as "ci: add The Hollow pipeline". The pipeline runs on that pull request.',
+    'Run `npx the-hollow fix` to commit just these files to a hollow/pipeline branch, open the pull request and watch the checks (it shows what it will do and asks first). Or commit them yourself with a Conventional Commit title, such as "ci: add The Hollow pipeline".',
     `Once it is merged, run \`npx the-hollow protect\` to protect ${plan.defaultBranch}: it shows the branch rules, environments and security settings it would apply on GitHub, and asks before changing anything.`,
   ];
   if (plan.existingHooks === null) {

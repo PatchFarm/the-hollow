@@ -1,11 +1,13 @@
 import { readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
+import type { WatchOptions } from "../agent/runs.js";
 import { loadConfig } from "../config/load.js";
 import { detectProject } from "../detect/index.js";
 import { isRepoName } from "../github/api.js";
 import { planPipeline } from "../pipeline/plan.js";
 import { ghWriter, type HostKeyTools, systemHostKeyTools, type Writer } from "../secrets/github.js";
 import { CHECK_IDS, type CheckStepId, check } from "./check-command.js";
+import { fix } from "./fix-command.js";
 import { formatPlan } from "./format.js";
 import { init, upgrade } from "./generate-command.js";
 import type { Ask } from "./interview.js";
@@ -26,11 +28,12 @@ export interface Io {
   connect?: Connect;
   secretsWriter?: (cwd: string) => Writer;
   hostKeys?: HostKeyTools;
+  /** Timing for `hollow fix` watching runs. Tests make it instant. */
+  clock?: Partial<WatchOptions>;
 }
 
 /** Commands from docs/SCOPE.md that are planned but not built yet, with the milestone that ships them. */
 const PLANNED: Record<string, { milestone: string; summary: string }> = {
-  fix: { milestone: "M5", summary: "Repair the latest failed pipeline run" },
   doctor: {
     milestone: "M6",
     summary: "Audit an existing pipeline against The Hollow's principles",
@@ -50,6 +53,8 @@ Commands:
   protect     Apply branch rules, environments and security settings on GitHub (asks first)
   secrets     List the secrets and variables the pipeline needs, set or missing, and set them
               (\`hollow secrets set NAME [--env ENV]\` sets one, reading the value from stdin)
+  fix         Commit the pipeline to a hollow/ branch and open its pull request (asks first),
+              then watch the checks and explain what fails and who can fix it
 ${Object.entries(PLANNED)
   .map(
     ([name, { milestone, summary }]) => `  ${name.padEnd(10)}  ${summary} (coming in ${milestone})`,
@@ -63,8 +68,10 @@ Options:
   --force            Replace existing files The Hollow did not write (init, upgrade)
   --target <name>    Deploy target: vercel, cloudflare-workers, cloudflare-pages, docker, vps (init)
   --yes              Accept every suggested answer without asking (init), or apply without
-                     confirming (protect)
-  --repo <owner/name>  GitHub repo to use, if not the one this folder's git remote points at (protect, secrets)
+                     confirming (protect, fix)
+  --repo <owner/name>  GitHub repo to use, if not the one this folder's git remote points at (protect, secrets, fix)
+  --run <id>         Explain this workflow run instead of the current commit's checks (fix)
+  --no-wait          Stop after opening the pull request (fix)
   --env <name>       Environment a value belongs to (secrets set)
   --install          Run the locked install CI uses before checking (check)
   --only <ids>       Run only some checks, comma-separated: ${CHECK_IDS.join(", ")} (check)
@@ -82,6 +89,7 @@ const COMMAND_OPTIONS: Record<string, readonly string[]> = {
   check: ["install", "only"],
   protect: ["dry-run", "yes", "repo"],
   secrets: ["repo", "env"],
+  fix: ["yes", "repo", "run", "no-wait"],
 };
 const GLOBAL_OPTIONS = ["cwd", "help", "version", "no-ai"];
 
@@ -192,6 +200,28 @@ export async function run(argv: readonly string[], io: Io): Promise<number> {
         hostKeys: io.hostKeys ?? systemHostKeyTools,
         ...output,
       });
+    case "fix": {
+      if (values.repo !== undefined && !isRepoName(values.repo)) {
+        io.stderr("--repo takes a GitHub repo as owner/name.\n");
+        return EXIT.usage;
+      }
+      const runId = values.run === undefined ? undefined : Number(values.run);
+      if (runId !== undefined && (!Number.isSafeInteger(runId) || runId <= 0)) {
+        io.stderr("--run takes a workflow run ID, the number in the run's URL.\n");
+        return EXIT.usage;
+      }
+      return fix({
+        dir,
+        repo: values.repo,
+        yes: values.yes ?? false,
+        run: runId,
+        wait: !(values["no-wait"] ?? false),
+        ask: io.ask,
+        connect: io.connect ?? ghConnect,
+        clock: io.clock,
+        ...output,
+      });
+    }
     case "upgrade":
       return upgrade({
         dir,
@@ -228,6 +258,8 @@ function parse(argv: readonly string[]) {
       only: { type: "string" },
       repo: { type: "string" },
       env: { type: "string" },
+      run: { type: "string" },
+      "no-wait": { type: "boolean" },
       "no-ai": { type: "boolean" },
       help: { type: "boolean", short: "h" },
       version: { type: "boolean", short: "v" },

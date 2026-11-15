@@ -44,7 +44,7 @@ Until 1.0, only the latest minor release gets security fixes.
 | A bad build reaches production | Every environment runs the same digest, built once and attested. Production deploys only a released digest that already passed staging, after the environment's approval. A failed health check rolls the environment back to the previous digest. |
 | `hollow protect` weakens a repo or changes the wrong one | It shows the repo name and every change first and sends only read requests until the developer confirms (or passes `--yes`). It goes through the developer's own `gh` login and never reads or stores a token. It only adds or tightens settings and never deletes rulesets or branch policies it did not create. Required checks are tied to the GitHub Actions app, so another app cannot report them. The one setting that loosens anything, letting Actions open pull requests (which also lets workflows approve them), is only turned on when no approval is required. |
 | Supply chain attack on The Hollow | Minimal dependencies, committed lockfile, actions pinned by SHA, npm trusted publishing with provenance from CI only, 2FA on maintainer accounts. |
-| The agent runs away (cost, retries, pushes) | Hard caps on retries and spend, shown before each run. The agent pushes only to its own branch, never to `main`. |
+| The agent runs away (cost, retries, pushes) | Hard caps on retries and spend, shown before each run. `hollow fix` shows the branch, files and pull request before it commits or pushes and does nothing without a yes (or `--yes`). It commits only The Hollow's own files, and pushes only `hollow/` branches, never the default branch. |
 
 ### In scope for reports
 
