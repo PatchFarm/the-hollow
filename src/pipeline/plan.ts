@@ -48,10 +48,63 @@ export interface PipelinePlan {
   deploy: DeployPlan | null;
   /** How migrations are applied and checked, or null when the project has none. */
   migrations: MigrationPlan | null;
+  /** Scheduled checks, alerts and incident issues. */
+  operations: OperationsPlan;
   /** Another git hook manager the project already uses (Husky, Lefthook), or null. */
   existingHooks: string | null;
   /** Things the developer should know before merging the generated pipeline. */
   notes: string[];
+}
+
+export interface OperationsPlan {
+  /** Cron for the synthetic checks, and the URLs they check, or null when there are none. */
+  synthetic: {
+    cron: string;
+    every: string;
+    targets: { environment: string; url: string }[];
+  } | null;
+  /** Cron for the nightly dependency re-scan, or null when it is off. */
+  nightlyScan: string | null;
+  /** Secret names of the Slack and Discord webhooks, when hollow.yml sets them. */
+  slackSecret: string | null;
+  discordSecret: string | null;
+  /** Open (and close) incident issues. */
+  issues: boolean;
+}
+
+/** Off the hour, so the run does not queue behind everyone else's top-of-the-hour jobs. */
+export const NIGHTLY_CRON = "23 3 * * *";
+const EVERY: Record<string, string> = {
+  "5m": "5 minutes",
+  "15m": "15 minutes",
+  "30m": "30 minutes",
+  "1h": "hour",
+};
+const SYNTHETIC_CRON: Record<string, string> = {
+  "5m": "*/5 * * * *",
+  "15m": "*/15 * * * *",
+  "30m": "*/30 * * * *",
+  "1h": "7 * * * *",
+};
+
+function planOperations(config: HollowConfig | null, deploy: DeployPlan | null): OperationsPlan {
+  const every = config?.verify.syntheticEvery ?? "15m";
+  const targets = (deploy?.environments ?? [])
+    .filter((environment) => environment.healthUrl !== null)
+    .map((environment) => ({
+      environment: environment.name,
+      url: environment.healthUrl as string,
+    }));
+  return {
+    synthetic:
+      every === "off" || targets.length === 0
+        ? null
+        : { cron: SYNTHETIC_CRON[every] as string, every: EVERY[every] as string, targets },
+    nightlyScan: (config?.security.nightlyScan ?? true) ? NIGHTLY_CRON : null,
+    slackSecret: config?.notifications.slackWebhookSecret ?? null,
+    discordSecret: config?.notifications.discordWebhookSecret ?? null,
+    issues: config?.notifications.incidentIssues ?? true,
+  };
 }
 
 export interface ReleasePlan {
@@ -165,6 +218,7 @@ export function planPipeline(detection: Detection, config: HollowConfig | null):
     release: null,
     deploy: null,
     migrations: null,
+    operations: planOperations(null, null),
     security: {
       failOn: config?.security.failOn ?? "high",
       sast: config?.security.sast ?? "auto",
@@ -233,6 +287,7 @@ export function planPipeline(detection: Detection, config: HollowConfig | null):
       release,
       deploy,
       migrations,
+      operations: planOperations(config, deploy),
     },
   };
 }

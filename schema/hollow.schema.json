@@ -417,7 +417,8 @@
     },
     "verify": {
       "default": {
-        "healthPath": "/"
+        "healthPath": "/",
+        "syntheticEvery": "15m"
       },
       "type": "object",
       "properties": {
@@ -426,6 +427,18 @@
           "description": "Path checked after every deploy, on each environment's url. A failed check rolls the deploy back.",
           "type": "string",
           "pattern": "^\\/[A-Za-z0-9._~/?=&%-]*$"
+        },
+        "syntheticEvery": {
+          "default": "15m",
+          "description": "How often scheduled.yml checks each environment's url plus healthPath. GitHub runs schedules at best every 5 minutes and often late, so this is a baseline, not uptime monitoring.",
+          "type": "string",
+          "enum": [
+            "off",
+            "5m",
+            "15m",
+            "30m",
+            "1h"
+          ]
         }
       },
       "additionalProperties": false,
@@ -434,7 +447,8 @@
     "security": {
       "default": {
         "failOn": "high",
-        "sast": "auto"
+        "sast": "auto",
+        "nightlyScan": true
       },
       "type": "object",
       "properties": {
@@ -458,6 +472,11 @@
             "codeql",
             "semgrep"
           ]
+        },
+        "nightlyScan": {
+          "default": true,
+          "description": "Re-scan the default branch's dependencies every night, since new vulnerabilities are published without any code changing.",
+          "type": "boolean"
         }
       },
       "additionalProperties": false

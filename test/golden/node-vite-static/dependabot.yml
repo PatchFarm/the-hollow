@@ -44,3 +44,4 @@ updates:
       - .github/workflows/ci.yml
       - .github/workflows/release.yml
       - .github/workflows/preview.yml
+      - .github/workflows/scheduled.yml

@@ -290,6 +290,7 @@ function renderImagePipeline(
   const last = previous;
   const productionEnvironment = production as DeployEnvironment;
   comments["jobs.production-gate"] = GATE_COMMENT;
+  comments["jobs.report-production"] = REPORT_COMMENT;
   comments["jobs.deploy-production"] =
     "Waits for the production environment's approval, then promotes the same digest.";
   comments["jobs.deploy-production-manual"] = MANUAL_COMMENT;
@@ -301,6 +302,7 @@ function renderImagePipeline(
       jobs,
       (source) => deployJob(plan, deploy, productionEnvironment, last, source),
       "image",
+      plan.operations,
     ),
   };
   return renderGenerated(workflow, {
@@ -423,6 +425,8 @@ function releaseAssetsJob(): Job {
   };
 }
 
+export const REPORT_COMMENT =
+  "A failed production deploy opens an incident issue (label hollow-incident); the next successful one closes it.";
 export const GATE_COMMENT =
   "Production deploys automatically only when its environment has required reviewers. Otherwise the release waits for a manual run.";
 export const MANUAL_COMMENT =

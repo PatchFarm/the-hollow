@@ -10,6 +10,7 @@ import {
   type Job,
   MANUAL_COMMENT,
   RELEASED,
+  REPORT_COMMENT,
   releaseEnv,
   releasePleaseJob,
   type Step,
@@ -60,6 +61,7 @@ export function renderCloudflarePipeline(
         ? workersProductionJob(plan, cf, production as DeployEnvironment, last, source)
         : pagesReleaseJob(plan, deploy, cf, production as DeployEnvironment, last, source),
     workers ? "worker" : "archive",
+    plan.operations,
   );
   return renderGenerated(
     {
@@ -85,6 +87,7 @@ export function renderCloudflarePipeline(
           ? "Waits for the production environment's approval, then sends all traffic to the staged version."
           : "Waits for the production environment's approval, then deploys the staged output to the production branch.",
         "jobs.production-gate": GATE_COMMENT,
+        "jobs.report-production": REPORT_COMMENT,
         "jobs.deploy-production-manual": MANUAL_COMMENT,
       },
     },

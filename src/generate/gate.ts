@@ -1,6 +1,8 @@
+import type { OperationsPlan } from "../pipeline/plan.js";
 import { lines } from "./ci.js";
 import type { Job, Step } from "./release.js";
 import { expr } from "./render.js";
+import { incidentStep } from "./scheduled.js";
 
 // Kept local (not imported from release.ts, which imports this module) so nothing here depends
 // on module load order.
@@ -191,6 +193,7 @@ export function addProductionGate(
   jobs: Record<string, Job>,
   production: (source: ReleaseSource) => Job,
   asset: ReleaseAsset,
+  operations: OperationsPlan,
 ): Record<string, Job> {
   const gated: Record<string, Job> = {};
   for (const [id, job] of Object.entries(jobs)) gated[id] = pushOnly(job);
@@ -215,5 +218,32 @@ export function addProductionGate(
     },
     steps: [resolveRelease(asset), ...(manual.steps as Step[])],
   };
+  gated["report-production"] = reportJob(operations);
   return gated;
+}
+
+/**
+ * After either production job finishes: open an incident issue when it failed (rolled back or
+ * not), and close it once a later production deploy succeeds.
+ */
+function reportJob(operations: OperationsPlan): Job {
+  const ran = (job: string) =>
+    `needs.${job}.result == 'success' || needs.${job}.result == 'failure'`;
+  return {
+    name: "Report the production deploy",
+    needs: ["release-please", "deploy-production", "deploy-production-manual"],
+    if: expr(`always() && (${ran("deploy-production")} || ${ran("deploy-production-manual")})`),
+    "runs-on": "ubuntu-latest",
+    "timeout-minutes": 5,
+    permissions: { issues: "write" },
+    steps: [
+      incidentStep(operations, {
+        name: "Open, update or close the incident",
+        title: "Production deploy failed",
+        failing:
+          "needs.deploy-production.result == 'failure' || needs.deploy-production-manual.result == 'failure'",
+        detail: `The production deploy of ${expr(`${RELEASE}.tag || inputs.version`)} failed. If its health check failed, production was rolled back to the version it ran before; the run's log says which step failed and whether the rollback worked.`,
+      }),
+    ],
+  };
 }

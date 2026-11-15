@@ -63,6 +63,7 @@ describe("deploy pipeline for image targets", () => {
       "production-gate",
       "deploy-production",
       "deploy-production-manual",
+      "report-production",
     ]);
     const staging = wf.jobs["deploy-staging"];
     expect(staging?.needs).toEqual(["build"]);

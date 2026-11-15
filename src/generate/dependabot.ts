@@ -3,6 +3,7 @@ import { CI_WORKFLOW } from "./ci.js";
 import { MIGRATIONS_WORKFLOW } from "./migrations.js";
 import { RELEASE_WORKFLOW } from "./release.js";
 import { renderGenerated } from "./render.js";
+import { hasSchedule, SCHEDULED_WORKFLOW } from "./scheduled.js";
 import { PREVIEW_WORKFLOW } from "./vercel.js";
 
 export const DEPENDABOT_CONFIG = ".github/dependabot.yml";
@@ -39,6 +40,7 @@ export function renderDependabot(plan: PipelinePlan): string {
         ...(plan.release === null ? [] : [RELEASE_WORKFLOW]),
         ...(plan.deploy?.previews ? [PREVIEW_WORKFLOW] : []),
         ...(plan.migrations !== null ? [MIGRATIONS_WORKFLOW] : []),
+        ...(hasSchedule(plan) ? [SCHEDULED_WORKFLOW] : []),
       ],
     }),
   );

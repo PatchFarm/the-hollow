@@ -365,3 +365,58 @@ jobs:
         run: |
           vercel promote "$DEPLOYMENT" --yes --timeout 5m --token "$VERCEL_TOKEN"
           echo "Promoted $DEPLOYMENT to production" >> "$GITHUB_STEP_SUMMARY"
+
+  # A failed production deploy opens an incident issue (label hollow-incident); the next successful one closes it.
+  report-production:
+    name: Report the production deploy
+    needs:
+      - release-please
+      - deploy-production
+      - deploy-production-manual
+    if: ${{ always() && (needs.deploy-production.result == 'success' || needs.deploy-production.result == 'failure' || needs.deploy-production-manual.result == 'success' || needs.deploy-production-manual.result == 'failure') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Open, update or close the incident
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: Production deploy failed
+          FAILING: ${{ needs.deploy-production.result == 'failure' || needs.deploy-production-manual.result == 'failure' }}
+          DETAIL: The production deploy of ${{ needs.release-please.outputs.tag || inputs.version }} failed. If its health check failed, production was rolled back to the version it ran before; the run's log says which step failed and whether the rollback worked.
+          ISSUES: "true"
+          SLACK_WEBHOOK: ""
+          DISCORD_WEBHOOK: ""
+        run: |
+          run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          now="$(date -u '+%Y-%m-%d %H:%M UTC')"
+          notify() {
+            if [ -n "$SLACK_WEBHOOK" ]; then
+              jq --null-input --arg text "$1" '{text: $text}' | curl --fail --silent --show-error --request POST --header 'content-type: application/json' --data @- "$SLACK_WEBHOOK" > /dev/null || echo '::warning title=Alert::The Slack webhook did not accept the message.'
+            fi
+            if [ -n "$DISCORD_WEBHOOK" ]; then
+              jq --null-input --arg text "$1" '{content: $text}' | curl --fail --silent --show-error --request POST --header 'content-type: application/json' --data @- "$DISCORD_WEBHOOK" > /dev/null || echo '::warning title=Alert::The Discord webhook did not accept the message.'
+            fi
+          }
+          number=""
+          if [ "$ISSUES" = "true" ]; then
+            gh label create hollow-incident --repo "$GITHUB_REPOSITORY" --color B60205 --description "Opened by The Hollow when a check or deploy fails" --force > /dev/null 2>&1 || true
+            number="$(gh issue list --repo "$GITHUB_REPOSITORY" --label hollow-incident --state open --limit 100 --json number,title --jq '.[] | select(.title == env.TITLE) | .number' | head -n 1)"
+          fi
+          if [ "$FAILING" = "true" ]; then
+            if [ -n "$number" ]; then
+              gh issue comment "$number" --repo "$GITHUB_REPOSITORY" --body "Still failing at $now: $run_url" > /dev/null
+              exit 0
+            fi
+            if [ "$ISSUES" = "true" ]; then
+              printf '%s\n\nFirst failed at %s: %s\n\nThe Hollow closes this issue when it passes again.\n' "$DETAIL" "$now" "$run_url" |
+                gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" --label hollow-incident --body-file - > /dev/null
+            fi
+            notify "$TITLE. $run_url"
+          elif [ -n "$number" ]; then
+            gh issue comment "$number" --repo "$GITHUB_REPOSITORY" --body "Passing again at $now: $run_url" > /dev/null
+            gh issue close "$number" --repo "$GITHUB_REPOSITORY" > /dev/null
+            notify "Recovered: $TITLE. $run_url"
+          fi

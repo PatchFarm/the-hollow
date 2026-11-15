@@ -209,7 +209,7 @@ function secretsJob(): Job {
   };
 }
 
-function dependenciesJob(plan: PipelinePlan): Job {
+export function dependenciesJob(plan: PipelinePlan): Job {
   const failOn = plan.security.failOn;
   // Unscored advisories only block when every finding should block.
   const unknownBlocks = failOn === "low" ? "1" : "0";

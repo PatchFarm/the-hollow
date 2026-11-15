@@ -203,7 +203,7 @@ hollow init
 | M3 Deploy | Vercel, Cloudflare, Docker, VPS: staging, preprod, production, verification, rollback |
 | M4 Database | Migration detection, CI migration test, destructive change check, deploy ordering |
 | M5 Agent | Run, read logs, repair loop, PR creation, guardrails and spend caps. Three PRs: guardrails (policy linter, log redaction, edit allowlist); run and read through `hollow fix` (branch, PR, watch, redacted logs, diagnosis without AI); the AI repair loop with caps, ending in a draft PR with findings when it cannot get a run to pass. Repairs go through `hollow.yml` (with `project.commands` for wrong commands) and the target files, never hand edits to generated workflows; one yes covers the loop; the model sees redacted logs, pipeline files and manifests, never application source |
-| M6 Operate | Synthetic checks, alerts, incident issues, `doctor`, docs and example repos, first npm release |
+| M6 Operate | Synthetic checks, alerts, incident issues, `doctor`, docs and example repos, first npm release. Four PRs (user, 2026-11-15): 1) scheduled.yml (synthetic checks every 15 minutes by default, nightly dependency re-scan), Slack/Discord alerts, one incident issue per problem closed on recovery, generated docs/PIPELINE.md; 2) `hollow doctor`; 3) The Hollow's own release pipeline and first npm release; 4) example repos and end-to-end runs on real targets |
 
 ## 12. Definition of done for v1
 
