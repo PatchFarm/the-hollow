@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+// Real git in temp repos is slow when every test file runs at once, hence the longer timeouts.
 import { describe, expect, it } from "vitest";
 import { EXIT } from "../src/cli/main.js";
 import { FakeGitHub, type FakeRun, fakeState } from "./fake-github.js";
@@ -105,7 +106,7 @@ function connect(fake: FakeGitHub) {
   return async () => ({ api: fake, repo: "octocat/demo" });
 }
 
-describe("hollow fix: publishing the pipeline", () => {
+describe("hollow fix: publishing the pipeline", { timeout: 30_000 }, () => {
   it("commits only The Hollow's files to hollow/pipeline, pushes, opens the PR, then explains the failure", async () => {
     const { dir, origin } = await project();
     // Unrelated work: a new file and a staged edit, which must stay out of the commit.
@@ -226,7 +227,7 @@ describe("hollow fix: publishing the pipeline", () => {
   });
 });
 
-describe("hollow fix: explaining runs", () => {
+describe("hollow fix: explaining runs", { timeout: 30_000 }, () => {
   it("watches the pushed commit when there is nothing to commit", async () => {
     const { dir } = await project();
     const fake = new FakeGitHub(fakeState({ runs: [passing(701, "CI")] }));

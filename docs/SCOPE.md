@@ -202,7 +202,7 @@ hollow init
 | M2 Release | Versioning, artifacts, SBOM, provenance, environments, approval gate, branch protection |
 | M3 Deploy | Vercel, Cloudflare, Docker, VPS: staging, preprod, production, verification, rollback |
 | M4 Database | Migration detection, CI migration test, destructive change check, deploy ordering |
-| M5 Agent | Run, read logs, repair loop, PR creation, guardrails and spend caps. Three PRs: guardrails (policy linter, log redaction, edit allowlist); run and read through `hollow fix` (branch, PR, watch, redacted logs, diagnosis without AI); the AI repair loop with caps, ending in a draft PR with findings when it cannot get a run to pass |
+| M5 Agent | Run, read logs, repair loop, PR creation, guardrails and spend caps. Three PRs: guardrails (policy linter, log redaction, edit allowlist); run and read through `hollow fix` (branch, PR, watch, redacted logs, diagnosis without AI); the AI repair loop with caps, ending in a draft PR with findings when it cannot get a run to pass. Repairs go through `hollow.yml` (with `project.commands` for wrong commands) and the target files, never hand edits to generated workflows; one yes covers the loop; the model sees redacted logs, pipeline files and manifests, never application source |
 | M6 Operate | Synthetic checks, alerts, incident issues, `doctor`, docs and example repos, first npm release |
 
 ## 12. Definition of done for v1

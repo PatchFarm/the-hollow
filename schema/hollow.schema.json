@@ -39,6 +39,76 @@
           "description": "Branch that CI runs on after merges. Defaults to `main`.",
           "type": "string",
           "pattern": "^[A-Za-z0-9._/-]+$"
+        },
+        "commands": {
+          "type": "object",
+          "properties": {
+            "install": {
+              "description": "Installs dependencies from the lockfile.",
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            },
+            "lint": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500
+                },
+                {
+                  "type": "boolean",
+                  "const": false
+                }
+              ]
+            },
+            "format": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500
+                },
+                {
+                  "type": "boolean",
+                  "const": false
+                }
+              ]
+            },
+            "typecheck": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500
+                },
+                {
+                  "type": "boolean",
+                  "const": false
+                }
+              ]
+            },
+            "test": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            },
+            "build": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500
+                },
+                {
+                  "type": "boolean",
+                  "const": false
+                }
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "description": "Commands CI runs instead of the detected ones. `false` drops a check; tests cannot be dropped."
         }
       },
       "additionalProperties": false,
@@ -455,8 +525,10 @@
     "agent": {
       "default": {
         "ai": true,
+        "apiKeyEnv": "HOLLOW_AI_API_KEY",
         "maxRepairAttempts": 3,
-        "maxSpendUsd": 2
+        "maxSpendUsd": 2,
+        "maxTokens": 300000
       },
       "type": "object",
       "properties": {
@@ -464,6 +536,31 @@
           "default": true,
           "description": "Set to false for the same result as --no-ai.",
           "type": "boolean"
+        },
+        "provider": {
+          "description": "How to talk to your model: the OpenAI-compatible Chat Completions API (most hosted providers and local servers) or Anthropic's Messages API. No model is used until this and model are set.",
+          "type": "string",
+          "enum": [
+            "openai-compatible",
+            "anthropic"
+          ]
+        },
+        "model": {
+          "description": "Model name, as your provider spells it.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "baseUrl": {
+          "type": "string",
+          "format": "uri",
+          "description": "The API base URL, for example https://api.openai.com/v1 or http://localhost:11434/v1."
+        },
+        "apiKeyEnv": {
+          "default": "HOLLOW_AI_API_KEY",
+          "description": "Environment variable holding the API key. The key never goes in hollow.yml.",
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_]*$"
         },
         "maxRepairAttempts": {
           "default": 3,
@@ -473,10 +570,38 @@
         },
         "maxSpendUsd": {
           "default": 2,
-          "description": "Hard cap on model spend per run, in US dollars.",
+          "description": "Hard cap on model spend per run, in US dollars. Needs pricing.",
           "type": "number",
           "minimum": 0,
           "maximum": 100
+        },
+        "pricing": {
+          "description": "Your model's price per million tokens, so the spend cap can count dollars. Without it, maxTokens caps each run instead.",
+          "type": "object",
+          "properties": {
+            "inputPerMillionUsd": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1000
+            },
+            "outputPerMillionUsd": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1000
+            }
+          },
+          "required": [
+            "inputPerMillionUsd",
+            "outputPerMillionUsd"
+          ],
+          "additionalProperties": false
+        },
+        "maxTokens": {
+          "default": 300000,
+          "description": "Token budget per run when pricing is not set (input plus output).",
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 10000000
         }
       },
       "additionalProperties": false

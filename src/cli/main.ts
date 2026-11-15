@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
+import type { Fetch } from "../agent/model.js";
 import type { WatchOptions } from "../agent/runs.js";
 import { loadConfig } from "../config/load.js";
 import { detectProject } from "../detect/index.js";
@@ -30,6 +31,9 @@ export interface Io {
   hostKeys?: HostKeyTools;
   /** Timing for `hollow fix` watching runs. Tests make it instant. */
   clock?: Partial<WatchOptions>;
+  /** How `hollow fix` reaches the model, and where it reads the API key. Tests pass fakes. */
+  fetch?: Fetch;
+  env?: NodeJS.ProcessEnv;
 }
 
 /** Commands from docs/SCOPE.md that are planned but not built yet, with the milestone that ships them. */
@@ -54,7 +58,7 @@ Commands:
   secrets     List the secrets and variables the pipeline needs, set or missing, and set them
               (\`hollow secrets set NAME [--env ENV]\` sets one, reading the value from stdin)
   fix         Commit the pipeline to a hollow/ branch and open its pull request (asks first),
-              then watch the checks and explain what fails and who can fix it
+              watch the checks and explain what fails, and with a model configured, repair it
 ${Object.entries(PLANNED)
   .map(
     ([name, { milestone, summary }]) => `  ${name.padEnd(10)}  ${summary} (coming in ${milestone})`,
@@ -75,7 +79,8 @@ Options:
   --env <name>       Environment a value belongs to (secrets set)
   --install          Run the locked install CI uses before checking (check)
   --only <ids>       Run only some checks, comma-separated: ${CHECK_IDS.join(", ")} (check)
-  --no-ai            Never call a model. This release makes no AI calls, so it is the default.
+  --no-ai            Never call a model: hollow fix explains failures but does not repair them.
+                     No model is called unless hollow.yml configures one (agent.provider, agent.model).
   -h, --help         Show this help
   -v, --version
 `;
@@ -219,6 +224,9 @@ export async function run(argv: readonly string[], io: Io): Promise<number> {
         ask: io.ask,
         connect: io.connect ?? ghConnect,
         clock: io.clock,
+        noAi: values["no-ai"] ?? false,
+        env: io.env ?? process.env,
+        fetch: io.fetch ?? ((url, init) => fetch(url, init)),
         ...output,
       });
     }

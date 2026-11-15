@@ -28,6 +28,28 @@ const githubLogin = z
   )
   .meta({ description: "GitHub user (`octocat`) or team (`org/team`)." });
 
+/** One shell line. hollow.yml is reviewed like code, and every workflow still passes the policy. */
+const command = z
+  .string()
+  .trim()
+  .min(1)
+  .max(500)
+  .refine((value) => !/[\r\n]/.test(value), "must be a single line");
+
+export const commandsSchema = z
+  .strictObject({
+    install: command.optional().meta({ description: "Installs dependencies from the lockfile." }),
+    lint: z.union([command, z.literal(false)]).optional(),
+    format: z.union([command, z.literal(false)]).optional(),
+    typecheck: z.union([command, z.literal(false)]).optional(),
+    test: command.optional(),
+    build: z.union([command, z.literal(false)]).optional(),
+  })
+  .meta({
+    description:
+      "Commands CI runs instead of the detected ones. `false` drops a check; tests cannot be dropped.",
+  });
+
 export const projectSchema = z
   .strictObject({
     language: z.enum(["node", "python"]).optional(),
@@ -43,6 +65,7 @@ export const projectSchema = z
       .refine((value) => !value.split("/").includes(".."), "must not contain `..`")
       .optional()
       .meta({ description: "Branch that CI runs on after merges. Defaults to `main`." }),
+    commands: commandsSchema.optional(),
   })
   .meta({ description: "Overrides for what The Hollow detects. Leave empty to use detection." });
 
@@ -246,19 +269,83 @@ export const notificationsSchema = z.strictObject({
     .meta({ description: "Open an issue when a production deploy fails." }),
 });
 
-export const agentSchema = z.strictObject({
-  ai: z
-    .boolean()
-    .default(true)
-    .meta({ description: "Set to false for the same result as --no-ai." }),
-  maxRepairAttempts: z.int().min(0).max(10).default(3),
-  maxSpendUsd: z
-    .number()
-    .min(0)
-    .max(100)
-    .default(2)
-    .meta({ description: "Hard cap on model spend per run, in US dollars." }),
-});
+/** Model endpoints: https anywhere, plain http only on this machine (local models). */
+const endpoint = z
+  .url()
+  .refine((value) => {
+    const url = new URL(value);
+    if (url.protocol === "https:") return true;
+    return url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+  }, "must be https, or http on localhost for a local model")
+  .meta({
+    description:
+      "The API base URL, for example https://api.openai.com/v1 or http://localhost:11434/v1.",
+  });
+
+export const agentSchema = z
+  .strictObject({
+    ai: z
+      .boolean()
+      .default(true)
+      .meta({ description: "Set to false for the same result as --no-ai." }),
+    provider: z.enum(["openai-compatible", "anthropic"]).optional().meta({
+      description:
+        "How to talk to your model: the OpenAI-compatible Chat Completions API (most hosted providers and local servers) or Anthropic's Messages API. No model is used until this and model are set.",
+    }),
+    model: z
+      .string()
+      .min(1)
+      .max(200)
+      .optional()
+      .meta({ description: "Model name, as your provider spells it." }),
+    baseUrl: endpoint.optional(),
+    apiKeyEnv: z
+      .string()
+      .regex(/^[A-Z][A-Z0-9_]*$/, "must be an environment variable NAME, never the key")
+      .default("HOLLOW_AI_API_KEY")
+      .meta({
+        description: "Environment variable holding the API key. The key never goes in hollow.yml.",
+      }),
+    maxRepairAttempts: z.int().min(0).max(10).default(3),
+    maxSpendUsd: z
+      .number()
+      .min(0)
+      .max(100)
+      .default(2)
+      .meta({ description: "Hard cap on model spend per run, in US dollars. Needs pricing." }),
+    pricing: z
+      .strictObject({
+        inputPerMillionUsd: z.number().min(0).max(1000),
+        outputPerMillionUsd: z.number().min(0).max(1000),
+      })
+      .optional()
+      .meta({
+        description:
+          "Your model's price per million tokens, so the spend cap can count dollars. Without it, maxTokens caps each run instead.",
+      }),
+    maxTokens: z
+      .int()
+      .min(1000)
+      .max(10_000_000)
+      .default(300_000)
+      .meta({ description: "Token budget per run when pricing is not set (input plus output)." }),
+  })
+  .superRefine((agent, context) => {
+    if (agent.provider !== undefined && agent.model === undefined) {
+      context.addIssue({
+        code: "custom",
+        path: ["model"],
+        message: "set the model to use with this provider",
+      });
+    }
+    if (agent.provider === "openai-compatible" && agent.baseUrl === undefined) {
+      context.addIssue({
+        code: "custom",
+        path: ["baseUrl"],
+        message: "set the provider's API base URL, for example https://api.openai.com/v1",
+      });
+    }
+  });
 
 export const hollowConfigSchema = z
   .strictObject({
@@ -280,7 +367,13 @@ export const hollowConfigSchema = z
       urlSecret: "DATABASE_URL",
     }),
     notifications: notificationsSchema.default({ incidentIssues: true }),
-    agent: agentSchema.default({ ai: true, maxRepairAttempts: 3, maxSpendUsd: 2 }),
+    agent: agentSchema.default({
+      ai: true,
+      apiKeyEnv: "HOLLOW_AI_API_KEY",
+      maxRepairAttempts: 3,
+      maxSpendUsd: 2,
+      maxTokens: 300_000,
+    }),
   })
   .meta({
     title: "hollow.yml",
