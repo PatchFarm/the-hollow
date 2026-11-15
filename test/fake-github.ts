@@ -47,7 +47,16 @@ export interface FakeState {
   refuse: Record<string, { status: number; message: string }>;
   /** Workflow runs. Each listing moves a run one state along its `states`, then it stays put. */
   runs: FakeRun[];
-  pulls: { number: number; head: string; base: string; title: string; body: string }[];
+  pulls: {
+    number: number;
+    head: string;
+    base: string;
+    title: string;
+    body: string;
+    draft?: boolean;
+  }[];
+  comments: { issue: number; body: string }[];
+  reruns: number[];
 }
 
 export interface FakeJob {
@@ -113,6 +122,8 @@ export function fakeState(overrides: Partial<FakeState> = {}): FakeState {
     refuse: {},
     runs: [],
     pulls: [],
+    comments: [],
+    reruns: [],
     ...overrides,
   };
 }
@@ -195,6 +206,13 @@ export class FakeGitHub implements GitHubApi {
     if (method === "GET" && team) {
       const id = s.teams[`${team[1]}/${team[2]}`];
       return id === undefined ? notFound : json({ id, slug: team[2] });
+    }
+    if (method === "POST" && path === "graphql") {
+      const id = (body?.variables as { id?: string } | undefined)?.id;
+      const pull = s.pulls.find((p) => `PR_${p.number}` === id);
+      if (pull === undefined) return json({ errors: [{ message: "Could not resolve to a node" }] });
+      pull.draft = true;
+      return json({ data: { convertPullRequestToDraft: { pullRequest: { isDraft: true } } } });
     }
     if (!path.startsWith(repo)) return notFound;
     const rest = path.slice(repo.length);
@@ -379,6 +397,7 @@ export class FakeGitHub implements GitHubApi {
           .filter((pull) => pull.head === head)
           .map((pull) => ({
             ...pull,
+            node_id: `PR_${pull.number}`,
             html_url: `https://github.com/${s.owner}/${s.name}/pull/${pull.number}`,
           })),
       );
@@ -396,6 +415,16 @@ export class FakeGitHub implements GitHubApi {
         { ...pull, html_url: `https://github.com/${s.owner}/${s.name}/pull/${pull.number}` },
         201,
       );
+    }
+    const comments = /^\/issues\/(\d+)\/comments$/.exec(rest);
+    if (method === "POST" && comments && body) {
+      s.comments.push({ issue: Number(comments[1]), body: String(body.body) });
+      return json({ id: this.nextId++ }, 201);
+    }
+    const rerun = /^\/actions\/runs\/(\d+)\/rerun-failed-jobs$/.exec(rest);
+    if (method === "POST" && rerun) {
+      s.reruns.push(Number(rerun[1]));
+      return json(null, 201);
     }
     if (rest === "/private-vulnerability-reporting") {
       if (method === "GET") return json({ enabled: s.reporting });

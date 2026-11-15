@@ -39,7 +39,13 @@ describe("hollow.yml", () => {
         urlSecret: "DATABASE_URL",
       },
       notifications: { incidentIssues: true },
-      agent: { ai: true, maxRepairAttempts: 3, maxSpendUsd: 2 },
+      agent: {
+        ai: true,
+        apiKeyEnv: "HOLLOW_AI_API_KEY",
+        maxRepairAttempts: 3,
+        maxSpendUsd: 2,
+        maxTokens: 300_000,
+      },
     });
   });
 

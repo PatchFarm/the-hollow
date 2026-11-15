@@ -185,6 +185,7 @@ export function planPipeline(detection: Detection, config: HollowConfig | null):
     }
     part = planPython(detection, files, packageManager, overrides.runtimeVersion, notes);
   }
+  part = withCommands(part, overrides.commands);
   const appPort =
     config === null || (config.deploy.target !== "docker" && config.deploy.target !== "vps")
       ? DEFAULT_APP_PORT[language]
@@ -241,6 +242,42 @@ function isNodePm(pm: PackageManager): pm is NodePackageManager {
 }
 
 type LanguagePart = Pick<PipelinePlan, "toolchain" | "install" | "checks">;
+
+const CHECK_ORDER: CheckId[] = ["lint", "format", "typecheck", "test", "build"];
+const CHECK_NAMES: Record<CheckId, string> = {
+  lint: "Lint",
+  format: "Format check",
+  typecheck: "Type check",
+  test: "Test",
+  build: "Build",
+};
+
+/** Apply hollow.yml's `project.commands`: replace, add or drop checks, and replace the install. */
+function withCommands(
+  part: LanguagePart,
+  commands: NonNullable<HollowConfig["project"]["commands"]> | undefined,
+): LanguagePart {
+  if (commands === undefined) return part;
+  let checks = [...part.checks];
+  for (const id of CHECK_ORDER) {
+    const value = commands[id];
+    if (value === undefined) continue;
+    checks = checks.filter((check) => check.id !== id);
+    if (value === false) continue;
+    checks.push({
+      id,
+      name: CHECK_NAMES[id],
+      run: value,
+      reason: `hollow.yml project.commands.${id}`,
+    });
+  }
+  checks.sort((a, b) => CHECK_ORDER.indexOf(a.id) - CHECK_ORDER.indexOf(b.id));
+  return {
+    ...part,
+    install: commands.install === undefined ? part.install : [commands.install],
+    checks,
+  };
+}
 
 function planNode(
   detection: Detection,

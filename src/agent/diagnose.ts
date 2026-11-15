@@ -206,8 +206,10 @@ const RULES: Rule[] = [
   {
     id: "command-not-found",
     owner: "pipeline",
+    // The shell's "not found", and uv's "Failed to spawn" when `uv run` cannot find the command.
     match: (_c, text) =>
-      find(/(?:^|\s)(?:\S+: )?(?:line \d+: )?([\w.-]+): (?:command )?not found/m, text),
+      find(/(?:^|\s)(?:\S+: )?(?:line \d+: )?([\w.-]+): (?:command )?not found/m, text) ??
+      find(/Failed to spawn: `([^`\s]+)`/, text),
     cause: (m) => `The step runs ${group(m, 1)}, which is not installed on the runner.`,
     fix: (m) =>
       `Install ${group(m, 1)} as a project dependency, or fix the command in hollow.yml and run \`hollow upgrade\`.`,

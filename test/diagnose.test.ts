@@ -128,6 +128,7 @@ describe("known failures", () => {
         "command-not-found",
         "pipeline",
       ],
+      ["error: Failed to spawn: `pytst`", "command-not-found", "pipeline"],
       ["HttpError: Resource not accessible by integration", "token-permissions", "pipeline"],
       ["npm error network request failed, reason: socket hang up ECONNRESET", "transient", "retry"],
     ];
