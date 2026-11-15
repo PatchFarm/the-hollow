@@ -33,6 +33,11 @@ async function project(): Promise<{ dir: string; origin: string }> {
   const origin = mkdtempSync(path.join(tmpdir(), "hollow-origin-"));
   git(origin, "init", "--quiet", "--bare", "--initial-branch=main");
   git(dir, "init", "--quiet", "--initial-branch=main");
+  // hollow fix runs git with the machine's own config, like it would for a developer. CI runners
+  // have no identity, so the repo gets one, and signing stays off whatever the machine says.
+  git(dir, "config", "user.name", "Test");
+  git(dir, "config", "user.email", "test@example.com");
+  git(dir, "config", "commit.gpgsign", "false");
   git(dir, "add", "--all");
   git(dir, "commit", "--quiet", "--message", "feat: the app");
   git(dir, "remote", "add", "origin", origin);
