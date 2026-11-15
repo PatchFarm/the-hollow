@@ -43,3 +43,4 @@ updates:
     exclude-paths:
       - .github/workflows/ci.yml
       - .github/workflows/release.yml
+      - .github/workflows/scheduled.yml

@@ -20,6 +20,17 @@ const SAMPLES: Record<string, HollowConfigInput["deploy"]> = {
   "python-django": { target: "vps", host: "app.example.com" },
 };
 
+/** Extra settings for some goldens, so the optional jobs (synthetic checks, alerts) get linted too. */
+const GOLDEN_EXTRA: Record<string, Partial<HollowConfigInput>> = {
+  "python-django": {
+    environments: {
+      staging: { url: "https://staging.example.com" },
+      production: { url: "https://example.com" },
+    },
+    notifications: { slackWebhookSecret: "SLACK_WEBHOOK_URL" },
+  },
+};
+
 function planFor(name: string, extra: Partial<HollowConfigInput> = {}): PipelinePlan {
   const config = hollowConfigSchema.parse({ version: 1, deploy: SAMPLES[name], ...extra });
   const result = planPipeline(detectProject(fixture(name)), config);
@@ -53,7 +64,7 @@ describe("golden files", () => {
   // `npx vitest run -u` and review the diff in test/golden/. CI lints these with actionlint.
   for (const name of Object.keys(SAMPLES)) {
     it(name, async () => {
-      for (const file of generateFiles(planFor(name))) {
+      for (const file of generateFiles(planFor(name, GOLDEN_EXTRA[name]))) {
         await expect(file.content).toMatchFileSnapshot(
           path.join(import.meta.dirname, "golden", name, path.basename(file.path)),
         );
@@ -176,6 +187,7 @@ describe("generated Dependabot config", () => {
       ".github/workflows/release.yml",
       ".github/workflows/preview.yml",
       ".github/workflows/migrations.yml",
+      ".github/workflows/scheduled.yml",
     ]);
   });
 

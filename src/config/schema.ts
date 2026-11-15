@@ -233,6 +233,10 @@ export const verifySchema = z
         description:
           "Path checked after every deploy, on each environment's url. A failed check rolls the deploy back.",
       }),
+    syntheticEvery: z.enum(["off", "5m", "15m", "30m", "1h"]).default("15m").meta({
+      description:
+        "How often scheduled.yml checks each environment's url plus healthPath. GitHub runs schedules at best every 5 minutes and often late, so this is a baseline, not uptime monitoring.",
+    }),
   })
   .meta({ description: "How each deploy is checked." });
 
@@ -244,6 +248,10 @@ export const securitySchema = z.strictObject({
     .enum(["auto", "codeql", "semgrep"])
     .default("auto")
     .meta({ description: "`auto` uses CodeQL on public repos and Semgrep on private ones." }),
+  nightlyScan: z.boolean().default(true).meta({
+    description:
+      "Re-scan the default branch's dependencies every night, since new vulnerabilities are published without any code changing.",
+  }),
 });
 
 export const databaseSchema = z.strictObject({
@@ -359,8 +367,8 @@ export const hollowConfigSchema = z
     deploy: deploySchema,
     release: releaseSchema.default({ tokenSecret: "RELEASE_PLEASE_TOKEN" }),
     protection: protectionSchema.default({ requiredApprovals: 0 }),
-    verify: verifySchema.default({ healthPath: "/" }),
-    security: securitySchema.default({ failOn: "high", sast: "auto" }),
+    verify: verifySchema.default({ healthPath: "/", syntheticEvery: "15m" }),
+    security: securitySchema.default({ failOn: "high", sast: "auto", nightlyScan: true }),
     database: databaseSchema.default({
       migrations: "auto",
       destructiveChangeLabel: "allow-destructive-migration",

@@ -194,6 +194,8 @@ describe("every template passes the policy", () => {
         for (const file of generateFiles(result.plan)) {
           if (!file.workflow) continue;
           expect(formatViolations(file.path, checkWorkflow(file.content))).toBe("");
+          // A shared object renders as a YAML anchor and alias, which is valid but hard to read.
+          expect(file.content, file.path).not.toMatch(/: [&*]a\d+$/m);
           checked++;
         }
       }

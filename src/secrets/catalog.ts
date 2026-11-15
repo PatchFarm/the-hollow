@@ -132,6 +132,25 @@ export function settingsFor(plan: PipelinePlan): Setting[] {
       });
     }
   }
+  const ops = plan.operations;
+  for (const [name, service] of [
+    [ops.slackSecret, "Slack"],
+    [ops.discordSecret, "Discord"],
+  ] as const) {
+    if (name === null) continue;
+    settings.push({
+      name,
+      kind: "secret",
+      environment: null,
+      required: true,
+      purpose: `${service} incoming webhook URL for failure and recovery alerts`,
+      input: "hidden",
+      hint:
+        service === "Slack"
+          ? "create an incoming webhook for your channel at https://api.slack.com/apps"
+          : "Server Settings > Integrations > Webhooks in Discord",
+    });
+  }
   if (plan.release !== null) {
     settings.push({
       name: plan.release.tokenSecret,

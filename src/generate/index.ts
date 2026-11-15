@@ -12,6 +12,7 @@ import {
 } from "./dockerfile.js";
 import { MIGRATION_CHECKER, renderMigrationChecker } from "./migration-check.js";
 import { MIGRATIONS_WORKFLOW, renderMigrationsWorkflow } from "./migrations.js";
+import { PIPELINE_DOC, renderPipelineDoc } from "./pipeline-doc.js";
 import { PR_TITLE_WORKFLOW, renderPrTitleWorkflow } from "./pr-title.js";
 import { PRE_COMMIT_CONFIG, renderPreCommit } from "./pre-commit.js";
 import { RELEASE_WORKFLOW, renderReleaseWorkflow } from "./release.js";
@@ -25,6 +26,7 @@ import {
   renderMigrationsGuide,
   renderPrTemplate,
 } from "./scaffold.js";
+import { hasSchedule, renderScheduledWorkflow, SCHEDULED_WORKFLOW } from "./scheduled.js";
 import {
   PREVIEW_WORKFLOW,
   renderPreviewWorkflow,
@@ -162,5 +164,19 @@ export function generateFiles(plan: PipelinePlan): GeneratedFile[] {
       workflow: false,
     });
   }
+  if (hasSchedule(plan)) {
+    files.push({
+      path: SCHEDULED_WORKFLOW,
+      content: renderScheduledWorkflow(plan),
+      kind: "generated",
+      workflow: true,
+    });
+  }
+  files.push({
+    path: PIPELINE_DOC,
+    content: renderPipelineDoc(plan),
+    kind: "generated",
+    workflow: false,
+  });
   return files;
 }

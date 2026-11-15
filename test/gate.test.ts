@@ -108,6 +108,11 @@ describe.each(SAMPLES)("production approval gate: %s", (name, deploy, asset) => 
   it("skips every other job on a manual run", () => {
     for (const [id, job] of Object.entries(wf.jobs)) {
       if (id === "deploy-production-manual") continue;
+      if (id === "report-production") {
+        // It reports on whichever production job ran, the manual one included.
+        expect(job.if).toContain("needs.deploy-production-manual.result == 'failure'");
+        continue;
+      }
       const runsOnPush =
         job.if === expr("github.event_name == 'push'") ||
         (job.if ?? "").includes("needs.release-please.outputs.released == 'true'");

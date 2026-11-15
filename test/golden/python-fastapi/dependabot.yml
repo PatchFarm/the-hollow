@@ -44,6 +44,7 @@ updates:
       - .github/workflows/ci.yml
       - .github/workflows/release.yml
       - .github/workflows/migrations.yml
+      - .github/workflows/scheduled.yml
   - package-ecosystem: docker
     directory: /
     commit-message:

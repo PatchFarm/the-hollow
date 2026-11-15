@@ -10,6 +10,7 @@ import {
   type Job,
   MANUAL_COMMENT,
   RELEASED,
+  REPORT_COMMENT,
   releaseEnv,
   releasePleaseJob,
   type Step,
@@ -52,6 +53,7 @@ export function renderVercelPipeline(
     jobs,
     (source) => productionJob(plan, vercel, production as DeployEnvironment, last, source),
     "deployment",
+    plan.operations,
   );
   return renderGenerated(
     {
@@ -71,6 +73,7 @@ export function renderVercelPipeline(
         [`jobs.${ASSETS}`]:
           "A release attaches the build output, its SBOM and the deployment URL. Provenance was attested when it was built.",
         "jobs.production-gate": GATE_COMMENT,
+        "jobs.report-production": REPORT_COMMENT,
         "jobs.deploy-production":
           "Waits for the production environment's approval, then promotes the staged deployment. Nothing is rebuilt.",
         "jobs.deploy-production-manual": MANUAL_COMMENT,

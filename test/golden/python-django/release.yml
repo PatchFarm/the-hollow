@@ -158,7 +158,9 @@ jobs:
       - build
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    environment: staging
+    environment:
+      name: staging
+      url: https://staging.example.com
     concurrency:
       group: deploy-staging
       cancel-in-progress: false
@@ -293,6 +295,53 @@ jobs:
           exit 1
           REMOTE
           echo "Deployed $IMAGE_REF to $ENVIRONMENT on $HOST" >> "$GITHUB_STEP_SUMMARY"
+      - name: Check https://staging.example.com/
+        env:
+          URL: https://staging.example.com/
+        run: |
+          for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
+            code="$(curl --silent --location --max-time 10 --output /dev/null --write-out '%{http_code}' "$URL" || true)"
+            if [ "$code" -ge 200 ] && [ "$code" -lt 500 ]; then
+              echo "$URL answered $code (attempt $attempt)."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error title=Health check::$URL did not answer without a server error within two minutes (last status: $code)."
+          exit 1
+      - name: Roll back
+        if: ${{ failure() && steps.deploy.outcome == 'success' }}
+        env:
+          HOST: app.example.com
+          SSH_USER: deploy
+          SSH_PORT: "22"
+          DIR: /srv/app/staging
+          ENVIRONMENT: staging
+        run: |
+          remote() {
+            ssh -i "$HOME/.ssh/deploy_key" -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -p "$SSH_PORT" "$SSH_USER@$HOST" "$@"
+          }
+          project="$(basename "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_-]/-/g')-$ENVIRONMENT"
+          remote sh -s -- "$DIR" "$project" << 'REMOTE'
+          set -eu
+          cd "$1"
+          project="$2"
+          compose() {
+            if [ -f .env ]; then
+              docker compose --project-name "$project" --env-file .env --env-file .hollow.env "$@"
+            else
+              docker compose --project-name "$project" --env-file .hollow.env "$@"
+            fi
+          }
+          if [ ! -f .hollow.env.previous ]; then
+            echo "There is no earlier version to roll back to." >&2
+            exit 0
+          fi
+          cp .hollow.env.previous .hollow.env
+          compose up --detach --wait --wait-timeout 120
+          REMOTE
+          echo "::error title=Rolled back::$ENVIRONMENT on $HOST is back on the previous version. The database stays migrated: a rollback restores the previous code, not the schema."
     if: ${{ github.event_name == 'push' }}
 
   # Production deploys automatically only when its environment has required reviewers. Otherwise the release waits for a manual run.
@@ -343,7 +392,9 @@ jobs:
     if: ${{ needs.release-please.outputs.released == 'true' && needs.production-gate.outputs.reviewed == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    environment: production
+    environment:
+      name: production
+      url: https://example.com
     concurrency:
       group: deploy-production
       cancel-in-progress: false
@@ -478,6 +529,53 @@ jobs:
           exit 1
           REMOTE
           echo "Deployed $IMAGE_REF to $ENVIRONMENT on $HOST" >> "$GITHUB_STEP_SUMMARY"
+      - name: Check https://example.com/
+        env:
+          URL: https://example.com/
+        run: |
+          for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
+            code="$(curl --silent --location --max-time 10 --output /dev/null --write-out '%{http_code}' "$URL" || true)"
+            if [ "$code" -ge 200 ] && [ "$code" -lt 500 ]; then
+              echo "$URL answered $code (attempt $attempt)."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error title=Health check::$URL did not answer without a server error within two minutes (last status: $code)."
+          exit 1
+      - name: Roll back
+        if: ${{ failure() && steps.deploy.outcome == 'success' }}
+        env:
+          HOST: app.example.com
+          SSH_USER: deploy
+          SSH_PORT: "22"
+          DIR: /srv/app/production
+          ENVIRONMENT: production
+        run: |
+          remote() {
+            ssh -i "$HOME/.ssh/deploy_key" -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -p "$SSH_PORT" "$SSH_USER@$HOST" "$@"
+          }
+          project="$(basename "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_-]/-/g')-$ENVIRONMENT"
+          remote sh -s -- "$DIR" "$project" << 'REMOTE'
+          set -eu
+          cd "$1"
+          project="$2"
+          compose() {
+            if [ -f .env ]; then
+              docker compose --project-name "$project" --env-file .env --env-file .hollow.env "$@"
+            else
+              docker compose --project-name "$project" --env-file .hollow.env "$@"
+            fi
+          }
+          if [ ! -f .hollow.env.previous ]; then
+            echo "There is no earlier version to roll back to." >&2
+            exit 0
+          fi
+          cp .hollow.env.previous .hollow.env
+          compose up --detach --wait --wait-timeout 120
+          REMOTE
+          echo "::error title=Rolled back::$ENVIRONMENT on $HOST is back on the previous version. The database stays migrated: a rollback restores the previous code, not the schema."
 
   # A person with write access runs this workflow with a release version: that run is the approval, and it deploys the release's own artifact.
   deploy-production-manual:
@@ -485,7 +583,9 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    environment: production
+    environment:
+      name: production
+      url: https://example.com
     concurrency:
       group: deploy-production
       cancel-in-progress: false
@@ -652,3 +752,105 @@ jobs:
           exit 1
           REMOTE
           echo "Deployed $IMAGE_REF to $ENVIRONMENT on $HOST" >> "$GITHUB_STEP_SUMMARY"
+      - name: Check https://example.com/
+        env:
+          URL: https://example.com/
+        run: |
+          for attempt in 1 2 3 4 5 6 7 8 9 10 11 12; do
+            code="$(curl --silent --location --max-time 10 --output /dev/null --write-out '%{http_code}' "$URL" || true)"
+            if [ "$code" -ge 200 ] && [ "$code" -lt 500 ]; then
+              echo "$URL answered $code (attempt $attempt)."
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error title=Health check::$URL did not answer without a server error within two minutes (last status: $code)."
+          exit 1
+      - name: Roll back
+        if: ${{ failure() && steps.deploy.outcome == 'success' }}
+        env:
+          HOST: app.example.com
+          SSH_USER: deploy
+          SSH_PORT: "22"
+          DIR: /srv/app/production
+          ENVIRONMENT: production
+        run: |
+          remote() {
+            ssh -i "$HOME/.ssh/deploy_key" -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile="$HOME/.ssh/known_hosts" -p "$SSH_PORT" "$SSH_USER@$HOST" "$@"
+          }
+          project="$(basename "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9_-]/-/g')-$ENVIRONMENT"
+          remote sh -s -- "$DIR" "$project" << 'REMOTE'
+          set -eu
+          cd "$1"
+          project="$2"
+          compose() {
+            if [ -f .env ]; then
+              docker compose --project-name "$project" --env-file .env --env-file .hollow.env "$@"
+            else
+              docker compose --project-name "$project" --env-file .hollow.env "$@"
+            fi
+          }
+          if [ ! -f .hollow.env.previous ]; then
+            echo "There is no earlier version to roll back to." >&2
+            exit 0
+          fi
+          cp .hollow.env.previous .hollow.env
+          compose up --detach --wait --wait-timeout 120
+          REMOTE
+          echo "::error title=Rolled back::$ENVIRONMENT on $HOST is back on the previous version. The database stays migrated: a rollback restores the previous code, not the schema."
+
+  # A failed production deploy opens an incident issue (label hollow-incident); the next successful one closes it.
+  report-production:
+    name: Report the production deploy
+    needs:
+      - release-please
+      - deploy-production
+      - deploy-production-manual
+    if: ${{ always() && (needs.deploy-production.result == 'success' || needs.deploy-production.result == 'failure' || needs.deploy-production-manual.result == 'success' || needs.deploy-production-manual.result == 'failure') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Open, update or close the incident
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: Production deploy failed
+          FAILING: ${{ needs.deploy-production.result == 'failure' || needs.deploy-production-manual.result == 'failure' }}
+          DETAIL: The production deploy of ${{ needs.release-please.outputs.tag || inputs.version }} failed. If its health check failed, production was rolled back to the version it ran before; the run's log says which step failed and whether the rollback worked.
+          ISSUES: "true"
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK_URL }}
+          DISCORD_WEBHOOK: ""
+        run: |
+          run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          now="$(date -u '+%Y-%m-%d %H:%M UTC')"
+          notify() {
+            if [ -n "$SLACK_WEBHOOK" ]; then
+              jq --null-input --arg text "$1" '{text: $text}' | curl --fail --silent --show-error --request POST --header 'content-type: application/json' --data @- "$SLACK_WEBHOOK" > /dev/null || echo '::warning title=Alert::The Slack webhook did not accept the message.'
+            fi
+            if [ -n "$DISCORD_WEBHOOK" ]; then
+              jq --null-input --arg text "$1" '{content: $text}' | curl --fail --silent --show-error --request POST --header 'content-type: application/json' --data @- "$DISCORD_WEBHOOK" > /dev/null || echo '::warning title=Alert::The Discord webhook did not accept the message.'
+            fi
+          }
+          number=""
+          if [ "$ISSUES" = "true" ]; then
+            gh label create hollow-incident --repo "$GITHUB_REPOSITORY" --color B60205 --description "Opened by The Hollow when a check or deploy fails" --force > /dev/null 2>&1 || true
+            number="$(gh issue list --repo "$GITHUB_REPOSITORY" --label hollow-incident --state open --limit 100 --json number,title --jq '.[] | select(.title == env.TITLE) | .number' | head -n 1)"
+          fi
+          if [ "$FAILING" = "true" ]; then
+            if [ -n "$number" ]; then
+              gh issue comment "$number" --repo "$GITHUB_REPOSITORY" --body "Still failing at $now: $run_url" > /dev/null
+              exit 0
+            fi
+            if [ "$ISSUES" = "true" ]; then
+              printf '%s\n\nFirst failed at %s: %s\n\nThe Hollow closes this issue when it passes again.\n' "$DETAIL" "$now" "$run_url" |
+                gh issue create --repo "$GITHUB_REPOSITORY" --title "$TITLE" --label hollow-incident --body-file - > /dev/null
+            fi
+            notify "$TITLE. $run_url"
+          elif [ -n "$number" ]; then
+            gh issue comment "$number" --repo "$GITHUB_REPOSITORY" --body "Passing again at $now: $run_url" > /dev/null
+            gh issue close "$number" --repo "$GITHUB_REPOSITORY" > /dev/null
+            notify "Recovered: $TITLE. $run_url"
+          fi

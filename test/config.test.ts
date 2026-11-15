@@ -31,8 +31,8 @@ describe("hollow.yml", () => {
       },
       release: { tokenSecret: "RELEASE_PLEASE_TOKEN" },
       protection: { requiredApprovals: 0 },
-      verify: { healthPath: "/" },
-      security: { failOn: "high", sast: "auto" },
+      verify: { healthPath: "/", syntheticEvery: "15m" },
+      security: { failOn: "high", sast: "auto", nightlyScan: true },
       database: {
         migrations: "auto",
         destructiveChangeLabel: "allow-destructive-migration",
