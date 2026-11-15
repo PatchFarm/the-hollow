@@ -1,6 +1,6 @@
 {
   "name": "the-hollow",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "An AI agent that sets up a complete, secure CI/CD pipeline for your project on GitHub Actions.",
   "license": "Apache-2.0",
   "author": "PatchFarm",
