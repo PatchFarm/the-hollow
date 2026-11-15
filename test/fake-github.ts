@@ -71,6 +71,8 @@ export interface FakeRun {
   id: number;
   name: string;
   head_sha: string;
+  /** The branch it ran on, for listings by branch. */
+  branch?: string;
   states: { status: string; conclusion: string | null }[];
   jobs: FakeJob[];
 }
@@ -355,9 +357,13 @@ export class FakeGitHub implements GitHubApi {
       return json(null, 204);
     }
     if (method === "GET" && rest === "/actions/runs") {
-      const sha = new URL(full, "https://x").searchParams.get("head_sha");
+      const params = new URL(full, "https://x").searchParams;
+      const sha = params.get("head_sha");
+      const branch = params.get("branch");
       // "*" stands for whatever commit the test made, which it cannot know in advance.
-      const matching = s.runs.filter((run) => run.head_sha === sha || run.head_sha === "*");
+      const matching = s.runs.filter((run) =>
+        sha === null ? run.branch === branch : run.head_sha === sha || run.head_sha === "*",
+      );
       return json({
         total_count: matching.length,
         workflow_runs: matching.map((run) => this.advance(run)),
