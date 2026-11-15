@@ -47,7 +47,7 @@ export function renderPipelineDoc(plan: PipelinePlan): string {
     "",
     "# How this pipeline works",
     "",
-    "Every workflow here is generated from `hollow.yml`. To change the pipeline, change `hollow.yml` and run `npx the-hollow upgrade`. `npx the-hollow fix` explains a failing run (and repairs it, if you configured a model).",
+    "Every workflow here is generated from `hollow.yml`. To change the pipeline, change `hollow.yml` and run `npx the-hollow upgrade`. `npx the-hollow fix` explains a failing run (and repairs it, if you configured a model), and `npx the-hollow doctor` checks the whole setup.",
     "",
     "## On every pull request",
     "",

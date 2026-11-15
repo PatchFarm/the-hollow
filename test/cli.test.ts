@@ -35,10 +35,21 @@ describe("hollow CLI", () => {
     expect((await cli(["plan", "extra"])).code).toBe(EXIT.usage);
   });
 
-  it("says which milestone ships a planned command", async () => {
-    const result = await cli(["doctor"]);
-    expect(result.code).toBe(EXIT.failure);
-    expect(result.stderr).toContain("milestone M6");
+  it("lists every v1 command from docs/SCOPE.md in the help", async () => {
+    const result = await cli(["--help"]);
+    for (const command of [
+      "init",
+      "plan",
+      "check",
+      "protect",
+      "doctor",
+      "fix",
+      "secrets",
+      "upgrade",
+    ]) {
+      expect(result.stdout).toMatch(new RegExp(`^  ${command} `, "m"));
+    }
+    expect(result.stdout).not.toContain("coming in");
   });
 
   it("plan prints a readable report", async () => {

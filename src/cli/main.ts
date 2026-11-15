@@ -8,6 +8,7 @@ import { isRepoName } from "../github/api.js";
 import { planPipeline } from "../pipeline/plan.js";
 import { ghWriter, type HostKeyTools, systemHostKeyTools, type Writer } from "../secrets/github.js";
 import { CHECK_IDS, type CheckStepId, check } from "./check-command.js";
+import { doctor } from "./doctor-command.js";
 import { fix } from "./fix-command.js";
 import { formatPlan } from "./format.js";
 import { init, upgrade } from "./generate-command.js";
@@ -36,14 +37,6 @@ export interface Io {
   env?: NodeJS.ProcessEnv;
 }
 
-/** Commands from docs/SCOPE.md that are planned but not built yet, with the milestone that ships them. */
-const PLANNED: Record<string, { milestone: string; summary: string }> = {
-  doctor: {
-    milestone: "M6",
-    summary: "Audit an existing pipeline against The Hollow's principles",
-  },
-};
-
 const HELP = `hollow: set up a secure CI/CD pipeline on GitHub Actions
 
 Usage:
@@ -59,21 +52,19 @@ Commands:
               (\`hollow secrets set NAME [--env ENV]\` sets one, reading the value from stdin)
   fix         Commit the pipeline to a hollow/ branch and open its pull request (asks first),
               watch the checks and explain what fails, and with a model configured, repair it
-${Object.entries(PLANNED)
-  .map(
-    ([name, { milestone, summary }]) => `  ${name.padEnd(10)}  ${summary} (coming in ${milestone})`,
-  )
-  .join("\n")}
+  doctor      Audit the pipeline: every workflow against the policy, The Hollow's files, and
+              (read-only, through gh) branch rules, secrets and recent runs
 
 Options:
   --cwd <dir>        Project directory (default: current directory)
-  --json             Machine-readable output (plan)
+  --json             Machine-readable output (plan, doctor)
+  --offline          Check only the repo's files, not GitHub (doctor)
   --dry-run          Show what would change without changing anything (init, upgrade, protect)
   --force            Replace existing files The Hollow did not write (init, upgrade)
   --target <name>    Deploy target: vercel, cloudflare-workers, cloudflare-pages, docker, vps (init)
   --yes              Accept every suggested answer without asking (init), or apply without
                      confirming (protect, fix)
-  --repo <owner/name>  GitHub repo to use, if not the one this folder's git remote points at (protect, secrets, fix)
+  --repo <owner/name>  GitHub repo to use, if not the one this folder's git remote points at (protect, secrets, fix, doctor)
   --run <id>         Explain this workflow run instead of the current commit's checks (fix)
   --no-wait          Stop after opening the pull request (fix)
   --env <name>       Environment a value belongs to (secrets set)
@@ -95,6 +86,7 @@ const COMMAND_OPTIONS: Record<string, readonly string[]> = {
   protect: ["dry-run", "yes", "repo"],
   secrets: ["repo", "env"],
   fix: ["yes", "repo", "run", "no-wait"],
+  doctor: ["json", "repo", "offline"],
 };
 const GLOBAL_OPTIONS = ["cwd", "help", "version", "no-ai"];
 
@@ -230,6 +222,19 @@ export async function run(argv: readonly string[], io: Io): Promise<number> {
         ...output,
       });
     }
+    case "doctor":
+      if (values.repo !== undefined && !isRepoName(values.repo)) {
+        io.stderr("--repo takes a GitHub repo as owner/name.\n");
+        return EXIT.usage;
+      }
+      return doctor({
+        dir,
+        repo: values.repo,
+        json: values.json ?? false,
+        offline: values.offline ?? false,
+        connect: io.connect ?? ghConnect,
+        ...output,
+      });
     case "upgrade":
       return upgrade({
         dir,
@@ -239,13 +244,6 @@ export async function run(argv: readonly string[], io: Io): Promise<number> {
       });
   }
 
-  const planned = PLANNED[command];
-  if (planned !== undefined) {
-    io.stderr(
-      `\`hollow ${command}\` is not built yet. It ships in milestone ${planned.milestone} (see docs/SCOPE.md).\n`,
-    );
-    return EXIT.failure;
-  }
   io.stderr(`Unknown command: ${command}\n\nRun \`hollow --help\` for usage.\n`);
   return EXIT.usage;
 }
@@ -268,6 +266,7 @@ function parse(argv: readonly string[]) {
       env: { type: "string" },
       run: { type: "string" },
       "no-wait": { type: "boolean" },
+      offline: { type: "boolean" },
       "no-ai": { type: "boolean" },
       help: { type: "boolean", short: "h" },
       version: { type: "boolean", short: "v" },

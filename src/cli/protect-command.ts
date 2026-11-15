@@ -1,7 +1,10 @@
+import type { HollowConfig } from "../config/schema.js";
 import { MIGRATION_CHECK } from "../generate/migrations.js";
 import { currentRepo, type GitHubApi, GitHubError, ghApi } from "../github/api.js";
+import type { PipelinePlan } from "../pipeline/plan.js";
 import {
   applyProtection,
+  type ProtectInput,
   type ProtectPlan,
   planProtection,
   REQUIRED_CHECKS,
@@ -21,6 +24,24 @@ export const ghConnect: Connect = async (dir, repo) => ({
   api: ghApi(dir),
   repo: repo ?? (await currentRepo(dir)),
 });
+
+/** What `hollow protect` wants the repo to look like, from the plan and hollow.yml. */
+export function protectInput(
+  plan: PipelinePlan,
+  settings: HollowConfig,
+  repo: string,
+): ProtectInput {
+  return {
+    repo,
+    defaultBranch: plan.defaultBranch,
+    requiredApprovals: settings.protection.requiredApprovals,
+    approvers: settings.environments.production.approvers,
+    preventSelfReview: settings.environments.production.preventSelfReview,
+    preprod: settings.environments.preprod.enabled,
+    releaseTokenSecret: plan.release === null ? null : plan.release.tokenSecret,
+    requiredChecks: [...REQUIRED_CHECKS, ...(plan.migrations === null ? [] : [MIGRATION_CHECK])],
+  };
+}
 
 export interface ProtectOptions {
   dir: string;
@@ -50,16 +71,7 @@ export async function protect(options: ProtectOptions): Promise<number> {
     const connection = await options.connect(detection.root, options.repo);
     repo = connection.repo;
     options.stdout(`Reading the current settings of ${repo} through gh...\n`);
-    result = await planProtection(connection.api, {
-      repo,
-      defaultBranch: plan.defaultBranch,
-      requiredApprovals: settings.protection.requiredApprovals,
-      approvers: settings.environments.production.approvers,
-      preventSelfReview: settings.environments.production.preventSelfReview,
-      preprod: settings.environments.preprod.enabled,
-      releaseTokenSecret: plan.release === null ? null : plan.release.tokenSecret,
-      requiredChecks: [...REQUIRED_CHECKS, ...(plan.migrations === null ? [] : [MIGRATION_CHECK])],
-    });
+    result = await planProtection(connection.api, protectInput(plan, settings, repo));
   } catch (error) {
     if (error instanceof GitHubError) {
       options.stderr(`${error.message}\n`);
